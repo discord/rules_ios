@@ -23,6 +23,7 @@ typedef struct mapping {
 static struct {
     char *name_space;
     char *output_file;
+    char *strip_prefix;
 } cli_args;
 
 static void usage();
@@ -30,7 +31,7 @@ static void debug(char *format, ...);
 
 static inline void chomp(char *s);
 static void add_entry(mapping **hashmap, char *key, char *value);
-static void add_header(mapping **hashmap, char *name_space, char *header);
+static void add_header(mapping **hashmap, char *name_space, char *strip_prefix, char *header);
 static void parse_args(mapping **hashmap, char **av, int ac);
 static void parse_param_file(mapping **hashmap, char *file);
 
@@ -38,12 +39,14 @@ static struct option longopts[] = {
     {"namespace", required_argument, NULL, 'n'},
     {"output", required_argument, NULL, 'o'},
     {"verbose", no_argument, NULL, 'v'},
+    {"strip-prefix", required_argument, NULL, 's'},
     {NULL, 0, NULL, 0},
 };
 
 int main(int ac, char **av) {
     cli_args.name_space = NULL;
     cli_args.output_file = NULL;
+    cli_args.strip_prefix = NULL;
     mapping *entries = NULL;
 
     parse_args(&entries, av, ac);
@@ -92,13 +95,16 @@ static void debug(char *format, ...) {
 static void parse_args(mapping **entries, char **av, int ac) {
     int c;
     optind = 0;
-    while ((c = getopt_long(ac, av, "n:o:", longopts, NULL)) != -1) {
+    while ((c = getopt_long(ac, av, "n:o:s:", longopts, NULL)) != -1) {
         switch (c) {
             case 'n':
                 cli_args.name_space = strdup(optarg);
                 break;
             case 'o':
                 cli_args.output_file = strdup(optarg);
+                break;
+            case 's':
+                cli_args.strip_prefix = strdup(optarg);
                 break;
             case 'v':
                 verbose = 1;
@@ -117,22 +123,33 @@ static void parse_args(mapping **entries, char **av, int ac) {
             parse_param_file(entries, *av);
             continue;
         }
-        add_header(entries, cli_args.name_space, *av);
+        add_header(entries, cli_args.name_space, cli_args.strip_prefix, *av);
     }
 }
 
-static void add_header(mapping **hashmap, char *name_space, char *header) {
-    char *bn = strdup(basename(header));
-    if (bn == NULL) {
+static void add_header(mapping **hashmap, char *name_space, char *strip_prefix, char *header) {
+    char *header_name;
+    if (strip_prefix != NULL) {
+        size_t prefix_len = strlen(strip_prefix);
+        if (strncmp(header, strip_prefix, prefix_len) == 0) {
+            header_name = strdup(header + prefix_len);
+        } else {
+            header_name = strdup(basename(header));
+        }
+    } else {
+        header_name = strdup(basename(header));
+    }
+
+    if (header_name == NULL) {
         fprintf(stderr,
                 "Failed to parse '%s': could not extract basename: %s\n",
                 header, strerror(errno));
         exit(1);
     }
-    add_entry(hashmap, bn, strdup(header));
+    add_entry(hashmap, header_name, strdup(header));
     if (name_space) {
         char *key = NULL;
-        asprintf(&key, "%s/%s", name_space, bn);
+        asprintf(&key, "%s/%s", name_space, header_name);
         if (!key) {
             perror("malloc");
             exit(1);

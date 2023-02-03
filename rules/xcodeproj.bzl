@@ -31,3 +31,11 @@ def xcodeproj(name, **kwargs):
         )
     else:
         legacy_xcodeproj(name = name, **kwargs)
+
+#library_tools["wrap_resources_in_filegroup"](name = target_name + "_resources", srcs = resource_bundles[bundle_name])
+def my_func():
+    pass
+
+library_tools = {"my_func": my_func}
+my_func_2 = library_tools["my_func"]
+my_func_2()

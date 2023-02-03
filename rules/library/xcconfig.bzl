@@ -12,6 +12,15 @@ _MAPC = "com.apple.compilers.model.coredatamapping"
 _IBTOOL = "com.apple.xcode.tools.ibtool.compiler"
 _OTHERWISE = "<<otherwise>>"
 
+# Don't have sets, have to use a dict instead ot get unique values.
+_ALL_CLANG_CATEGORIES = sorted({option.get("Category", ""): None for option in SETTINGS[_CLANG]["Options"].values()}.keys())
+
+# This isn't quite right; we probably want to split C/C++ and ObjC/ObjC++
+_C_FILE_TYPE = "sourcecode.c.c"
+_CPP_FILE_TYPE = "sourcecode.cpp.cpp"
+_OBJC_FILE_TYPE = "sourcecode.c.objc"
+_OBJCPP_FILE_TYPE = "sourcecode.cpp.objcpp"
+
 def _unknown_enum_value(name, option, value, fatal = False):
     if option["Type"] != "Enumeration":
         return
@@ -178,8 +187,10 @@ def _add_copts_from_option(xcspec, name, option, value, value_escaper, xcconfigs
     ]
 
 def copts_from_xcconfig(xcconfig):
+    c_copts = []
+    cpp_copts = []
     objc_copts = []
-    cc_copts = []
+    objcpp_copts = []
     swift_copts = []
     momc_copts = []
     mapc_copts = []
@@ -199,6 +210,7 @@ def copts_from_xcconfig(xcconfig):
         "CLANG_MODULES_PRUNE_AFTER",  # we don't want to prune the ephemeral module cache
         "CLANG_MODULES_PRUNE_INTERVAL",  # we don't want to prune the ephemeral module cache
         "IBC_MODULE",  # derived by rules_apple
+        "CLANG_ENABLE_MODULE_IMPLEMENTATION_OF",  # handled by module maps
         "GCC_OPTIMIZATION_LEVEL",  # handled by objc_library via compilation_mode
         "LD_LTO_OBJECT_FILE",  # handled by objc_library
         "MAPC_MODULE",  # derived by rules_apple
@@ -220,15 +232,18 @@ def copts_from_xcconfig(xcconfig):
     )
 
     identifiers = [
-        (_CLANG, objc_copts, shell.quote),
-        (_SWIFT, swift_copts, _id),
-        (_LD, linkopts, shell.quote),
-        (_MOMC, momc_copts, _id),
-        (_MAPC, mapc_copts, _id),
-        (_IBTOOL, ibtool_copts, _id),
+        (_CLANG, c_copts, _C_FILE_TYPE, shell.quote),
+        (_CLANG, cpp_copts, _CPP_FILE_TYPE, shell.quote),
+        (_CLANG, objc_copts, _OBJC_FILE_TYPE, shell.quote),
+        (_CLANG, objcpp_copts, _OBJCPP_FILE_TYPE, shell.quote),
+        (_SWIFT, swift_copts, None, _id),
+        (_LD, linkopts, None, shell.quote),
+        (_MOMC, momc_copts, None, _id),
+        (_MAPC, mapc_copts, None, _id),
+        (_IBTOOL, ibtool_copts, None, _id),
     ]
 
-    for (id, copts, value_escaper) in identifiers:
+    for (id, copts, file_type, value_escaper) in identifiers:
         settings = SETTINGS[id]["Options"]
         for (setting, option) in settings.items():
             if setting not in xcconfig and "DefaultValue" not in option:
@@ -237,12 +252,19 @@ def copts_from_xcconfig(xcconfig):
             if setting in ignored_settings:
                 continue
 
+            # If we have a file_type filter and this setting has a file type filter and our file type isn't in the
+            # setting's list, then ignore the setting. If the setting *doesn't* list file types, assume it's valid.
+            if file_type != None and file_type not in option.get("FileTypes", [file_type]):
+                continue
+
             value = xcconfig.get(setting)
             _add_copts_from_option(id, setting, option, value, value_escaper, xcconfig, copts, linkopts)
 
     return struct(
+        c_copts = c_copts,
+        cpp_copts = cpp_copts,
         objc_copts = objc_copts,
-        cc_copts = cc_copts,
+        objcpp_copts = objcpp_copts,
         swift_copts = swift_copts,
         momc_copts = momc_copts,
         mapc_copts = mapc_copts,
@@ -298,8 +320,10 @@ def copts_by_build_setting_with_defaults(xcconfig = {}, fetch_default_xcconfig =
     # Default copts to be used in case no bazel build setting gets resolved
     copts_with_defaults = copts_from_xcconfig(xcconfig_with_defaults)
 
+    c_copts_by_build_setting = {"//conditions:default": copts_with_defaults.c_copts}
+    cpp_copts_by_build_setting = {"//conditions:default": copts_with_defaults.cpp_copts}
     objc_copts_by_build_setting = {"//conditions:default": copts_with_defaults.objc_copts}
-    cc_copts_by_build_setting = {"//conditions:default": copts_with_defaults.cc_copts}
+    objcpp_copts_by_build_setting = {"//conditions:default": copts_with_defaults.objcpp_copts}
     swift_copts_by_build_setting = {"//conditions:default": copts_with_defaults.swift_copts}
     momc_copts_by_build_setting = {"//conditions:default": copts_with_defaults.momc_copts}
     mapc_copts_by_build_setting = {"//conditions:default": copts_with_defaults.mapc_copts}
@@ -322,8 +346,10 @@ def copts_by_build_setting_with_defaults(xcconfig = {}, fetch_default_xcconfig =
         # The copts to be used in case this bazel build setting gets resolved
         copts = copts_from_xcconfig(merged_xcconfig)
 
+        c_copts_by_build_setting[build_setting] = copts.c_copts
+        cpp_copts_by_build_setting[build_setting] = copts.cpp_copts
         objc_copts_by_build_setting[build_setting] = copts.objc_copts
-        cc_copts_by_build_setting[build_setting] = copts.cc_copts
+        objcpp_copts_by_build_setting[build_setting] = copts.objcpp_copts
         swift_copts_by_build_setting[build_setting] = copts.swift_copts
         momc_copts_by_build_setting[build_setting] = copts.momc_copts
         mapc_copts_by_build_setting[build_setting] = copts.mapc_copts
@@ -331,8 +357,10 @@ def copts_by_build_setting_with_defaults(xcconfig = {}, fetch_default_xcconfig =
         linkopts_by_build_setting[build_setting] = copts.linkopts
 
     return struct(
+        c_copts = select(c_copts_by_build_setting),
+        cpp_copts = select(cpp_copts_by_build_setting),
         objc_copts = select(objc_copts_by_build_setting),
-        cc_copts = select(cc_copts_by_build_setting),
+        objcpp_copts = select(objcpp_copts_by_build_setting),
         swift_copts = select(swift_copts_by_build_setting),
         momc_copts = select(momc_copts_by_build_setting),
         mapc_copts = select(mapc_copts_by_build_setting),

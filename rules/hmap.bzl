@@ -7,7 +7,7 @@ HeaderMapInfo = provider(
     },
 )
 
-def _make_hmap(actions, headermap_builder, output, namespace, hdrs_lists):
+def _make_hmap(actions, headermap_builder, output, namespace, hdrs_lists, workspace_root, strip_prefix):
     """Makes an hmap file.
 
     Args:
@@ -23,6 +23,9 @@ def _make_hmap(actions, headermap_builder, output, namespace, hdrs_lists):
         args.add("--namespace", namespace)
 
     args.add("--output", output)
+
+    if strip_prefix:
+        args.add("--strip-prefix", "{}/{}/".format(workspace_root, strip_prefix))
 
     for hdrs in hdrs_lists:
         args.add_all(hdrs)
@@ -67,6 +70,8 @@ def _make_headermap_impl(ctx):
         output = ctx.outputs.headermap,
         namespace = ctx.attr.namespace,
         hdrs_lists = hdrs_lists,
+        workspace_root = ctx.label.workspace_root,
+        strip_prefix = ctx.attr.strip_prefix,
     )
 
     cc_info_provider = CcInfo(
@@ -103,6 +108,13 @@ headermap = rule(
             mandatory = True,
             allow_files = True,
             doc = "The list of headers included in the headermap",
+        ),
+        "strip_prefix": attr.string(
+            mandatory = False,
+            doc = (
+                "If given, the prefix to strip off of the header names."
+                + " If not given, stips all leading directories (flattens the headers)."
+            ),
         ),
         "direct_hdr_providers": attr.label_list(
             mandatory = False,

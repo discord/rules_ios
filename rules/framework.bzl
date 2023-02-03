@@ -49,6 +49,7 @@ def apple_framework(name, apple_library = apple_library, **kwargs):
         **kwargs: Arguments passed to the apple_library and apple_framework_packaging rules as appropriate.
     """
     framework_packaging_kwargs = {arg: kwargs.pop(arg) for arg in _APPLE_FRAMEWORK_PACKAGING_KWARGS if arg in kwargs}
+    framework_packaging_kwargs["headermap_strip_prefix"] = kwargs.get("headermap_strip_prefix")
     kwargs["enable_framework_vfs"] = kwargs.pop("enable_framework_vfs", True)
 
     infoplists_by_build_setting = kwargs.pop("infoplists_by_build_setting", {})
@@ -121,6 +122,14 @@ def _find_framework_dir(outputs):
     return None
 
 def _framework_packaging_symlink_headers(ctx, inputs, outputs):
+    output_to_inputs = {}
+    for input, output in zip(inputs, outputs):
+        output_to_inputs.setdefault(output, []).append(input)
+    output_inputs_with_dups_pairs = [
+        (output, inputs_with_dups)
+        for output, inputs_with_dups in output_to_inputs.items()
+        if len(inputs_with_dups) > 1
+    ]
     inputs_by_basename = {input.basename: input for input in inputs}
 
     # If this check is true it means that multiple inputs have the same 'basename',
@@ -128,20 +137,17 @@ def _framework_packaging_symlink_headers(ctx, inputs, outputs):
     # two different paths to the same file
     #
     # In that case fails with a msg listing the differences found
-    if len(inputs_by_basename) != len(inputs):
-        inputs_by_basename_paths = [x.path for x in inputs_by_basename.values()]
-        inputs_with_duplicated_basename = [x for x in inputs if not x.path in inputs_by_basename_paths]
-        if len(inputs_with_duplicated_basename) > 0:
-            fail("""
-                [Error] Multiple files with the same name exists.\n
-                See below for the list of paths found for each basename:\n
-                {}
-            """.format({x.basename: (x.path, inputs_by_basename[x.basename].path) for x in inputs_with_duplicated_basename}))
+    if len(output_inputs_with_dups_pairs) > 0:
+        fail("""
+            [Error] Multiple files with the same output exists.\n
+            See below for the list of paths found for each output:\n
+            {}
+        """.format(output_inputs_with_dups_pairs))
 
     # If no error occurs create symlinks for each output with
     # each input as 'target_file'
-    output_input_dict = {output: inputs_by_basename[output.basename] for output in outputs}
-    for (output, input) in output_input_dict.items():
+    # output_input_dict = {output: inputs_by_basename[output.basename] for output in outputs}
+    for (output, input) in zip(outputs, inputs):
         ctx.actions.symlink(output = output, target_file = input)
 
 def _framework_packaging(ctx, action, inputs, outputs, manifest = None):
@@ -244,6 +250,37 @@ def _get_virtual_framework_info(ctx, framework_files, compilation_context_fields
         swiftdoc = outputs.swiftdoc,
     )
 
+def _header_dest_path(hdr_path, strip_prefix):
+    basename = hdr_path.basename
+    if strip_prefix == None:
+        return basename
+    else:
+        path = str(hdr_path.path)
+        start = str(strip_prefix)
+        # A modified version of paths.relativize, but falls back to a value rather than failing when
+        # non-relative. From:
+        # https://github.com/bazelbuild/bazel-skylib/blob/8a6ab72c6ece96cab91e17aaf4fb5339615d1d3d/lib/paths.bzl#L156-L190
+        segments = paths.normalize(path).split("/")
+        start_segments = paths.normalize(start).split("/")
+        if start_segments == ["."]:
+            start_segments = []
+        start_length = len(start_segments)
+
+        if (path.startswith("/") != start.startswith("/") or
+            len(segments) < start_length):
+                # print("FALLBACK", repr(hdr_path.root.path), repr(hdr_path.short_path), repr(path), repr(start), repr(basename))
+                return basename
+
+        for ancestor_segment, segment in zip(start_segments, segments):
+            if ancestor_segment != segment:
+                # print("FALLBACK", repr(hdr_path.root.path), repr(hdr_path.short_path), repr(path), repr(start), repr(basename))
+                return basename
+
+        length = len(segments) - start_length
+        result_segments = segments[-length:]
+        # print("SUCCESS", repr(hdr_path.root.path), repr(hdr_path.short_path), repr(path), repr(start), repr("/".join(result_segments)))
+        return "/".join(result_segments)
+
 def _get_framework_files(ctx, deps):
     framework_name = ctx.attr.framework_name
     bundle_extension = ctx.attr.bundle_extension
@@ -255,11 +292,8 @@ def _get_framework_files(ctx, deps):
     binary_in = []
 
     # headers
-    header_in = []
-    header_out = []
-
-    private_header_in = []
-    private_header_out = []
+    headers_in_to_out = {}
+    private_headers_in_to_out = {}
 
     # modulemap
     modulemap_in = None
@@ -274,6 +308,10 @@ def _get_framework_files(ctx, deps):
     swiftinterface_in = None
     swiftdoc_in = None
     swiftdoc_out = None
+
+    headermap_strip_prefix = ctx.attr.headermap_strip_prefix
+    if headermap_strip_prefix != None:
+        headermap_strip_prefix = paths.join(ctx.label.workspace_root, headermap_strip_prefix)
 
     # collect files
     for dep in deps:
@@ -314,22 +352,25 @@ def _get_framework_files(ctx, deps):
 
         if PrivateHeadersInfo in dep:
             for hdr in dep[PrivateHeadersInfo].headers.to_list():
-                private_header_in.append(hdr)
-                destination = paths.join(framework_dir, "PrivateHeaders", hdr.basename)
-                private_header_out.append(destination)
+                destination = paths.join(framework_dir, "PrivateHeaders", _header_dest_path(hdr, headermap_strip_prefix))
+                existing_destination = private_headers_in_to_out.get(hdr, destination)
+                if existing_destination != destination:
+                    fail("Header '{}' mapped to different destinations, '{}' and '{}'".format(hdr, existing_destination, destination))
+                private_headers_in_to_out[hdr] = destination
 
-        has_header = False
         for provider in [CcInfo, apple_common.Objc]:
             if provider in dep:
                 for hdr in _get_direct_public_headers(provider, dep):
                     if hdr.path.endswith((".h", ".hh", ".hpp")):
-                        has_header = True
-                        header_in.append(hdr)
-                        destination = paths.join(framework_dir, "Headers", hdr.basename)
-                        header_out.append(destination)
+                        destination = paths.join(framework_dir, "Headers", _header_dest_path(hdr, headermap_strip_prefix))
+                        existing_destination = private_headers_in_to_out.get(hdr, destination)
+                        if existing_destination != destination:
+                            fail("Header '{}' mapped to different destinations, '{}' and '{}'".format(hdr, existing_destination, destination))
+                        headers_in_to_out[hdr] = destination
                     elif hdr.path.endswith(".modulemap"):
                         modulemap_in = hdr
 
+        has_header = len(headers_in_to_out) > 0
         if not has_header:
             # only thing is the generated module map -- we don't want it
             continue
@@ -347,6 +388,26 @@ def _get_framework_files(ctx, deps):
                 # from the attr
                 continue
             modulemap_in = modulemap
+
+
+    private_header_in = []
+    private_header_out = []
+    for k, v in private_headers_in_to_out.items():
+        private_header_in.append(k)
+        private_header_out.append(v)
+
+    header_in = []
+    header_out = []
+    for k, v in headers_in_to_out.items():
+        header_in.append(k)
+        header_out.append(v)
+    
+    # if ctx.label.workspace_root == "external/glog":
+    #     print(private_header_in)
+    #     print(private_header_out)
+    #     print(header_in)
+    #     print(header_out)
+
 
     binary_out = None
     modulemap_out = None
@@ -880,8 +941,9 @@ def _apple_framework_packaging_impl(ctx):
     if virtualize_frameworks:
         cc_info = cc_common.merge_cc_infos(direct_cc_infos = [cc_info_provider])
     else:
-        dep_cc_infos = [dep[CcInfo] for dep in transitive_deps if CcInfo in dep]
-        cc_info = cc_common.merge_cc_infos(direct_cc_infos = [cc_info_provider], cc_infos = dep_cc_infos)
+        dep_cc_infos = [dep[CcInfo] for dep in deps if CcInfo in dep]
+        transitive_dep_cc_infos = [dep[CcInfo] for dep in transitive_deps if CcInfo in dep]
+        cc_info = cc_common.merge_cc_infos(direct_cc_infos = dep_cc_infos + [cc_info_provider], cc_infos = dep_cc_infos)
 
     # Propagate the avoid deps information upwards
     avoid_deps = []
@@ -1002,6 +1064,10 @@ Valid values are:
 - "swiftmodule"
 - "swiftdoc"
             """,
+        ),
+        "headermap_strip_prefix": attr.string(
+            mandatory = False,
+            doc = "TODO",
         ),
         "_framework_packaging": attr.label(
             cfg = "host",

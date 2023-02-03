@@ -97,7 +97,15 @@ extend_modulemap = rule(
     doc = "Extends a modulemap with a Swift submodule",
 )
 
-def _write_modulemap(name, library_tools, umbrella_header = None, public_headers = [], private_headers = [], module_name = None, framework = False, **kwargs):
+def _write_modulemap(
+        name,
+        library_tools,
+        umbrella_header = None,
+        public_headers = [],
+        private_headers = [],
+        module_name = None,
+        framework = False,
+        **kwargs):
     basename = "{}.modulemap".format(name)
     destination = paths.join(name + "-modulemap", basename)
     if not module_name:
@@ -178,6 +186,7 @@ FOUNDATION_EXPORT const unsigned char {module_name}VersionString[];
     return destination
 
 def _generate_resource_bundles(name, library_tools, module_name, resource_bundles, platforms, **kwargs):
+    wrap_resources_in_filegroup = library_tools["wrap_resources_in_filegroup"]
     bundle_target_names = []
     for bundle_name in resource_bundles:
         target_name = "%s-%s" % (name, bundle_name)
@@ -186,7 +195,7 @@ def _generate_resource_bundles(name, library_tools, module_name, resource_bundle
             bundle_name = bundle_name,
             bundle_id = bundle_identifier_for_bundle(bundle_name),
             resources = [
-                library_tools["wrap_resources_in_filegroup"](name = target_name + "_resources", srcs = resource_bundles[bundle_name]),
+                wrap_resources_in_filegroup(name = target_name + "_resources", srcs = resource_bundles[bundle_name]),
             ],
             platforms = platforms,
             tags = _MANUAL,
@@ -243,39 +252,48 @@ def _canonicalize_swift_version(swift_version):
 def _xcframework_build_type(*, linkage, packaging):
     return (linkage, packaging)
 
-def _xcframework_slice(*, xcframework_name, identifier, platform, platform_variant, supported_archs, build_type, path, dsym_imports = []):
+def _xcframework_slice_imports(path):
+    """
+    Returns a tuple of the headers, module map and swiftmodules for the given path in a .xcframework.
+    """
+    hdrs = native.glob(["%s/**/*.h" % path], allow_empty = True)
+    modulemaps = native.glob(["%s/**/*.modulemap" % path], allow_empty = True)
+    swiftmodules = native.glob(["%s/**/*.swiftmodule/*.*" % path], allow_empty = True)
+    modulemap = modulemaps[0] if modulemaps else None
+    return hdrs, modulemap, swiftmodules
+
+def _make_xcframework_vfs(xcframework_name, resolved_target_name_vfs_overlay, hdrs, modulemap, swiftmodules, static = False):
+    """
+    Creates a framework_vfs_overlay with the provided arguments.
+
+    If static is True, the framework_vfs_overlay will be created within the context
+    of a static library within a .xcframework.
+    """
+    imported_framework_name = _find_imported_xcframework_name(hdrs) if static else _find_imported_framework_name(hdrs)
+    vfs_framework_name = imported_framework_name if imported_framework_name else xcframework_name
+    framework_vfs_overlay(
+        name = resolved_target_name_vfs_overlay,
+        framework_name = vfs_framework_name,
+        modulemap = modulemap,
+        swiftmodules = swiftmodules,
+        hdrs = hdrs,
+        tags = _MANUAL,
+        extra_search_paths = None if static else xcframework_name,
+    )
+
+def _xcframework_slice(
+        *,
+        xcframework_name,
+        identifier,
+        platform,
+        platform_variant,
+        supported_archs,
+        build_type,
+        path,
+        dsym_imports = []):
     linkage, packaging = _xcframework_build_type(**build_type)
     resolved_target_name = "{}-{}".format(xcframework_name, identifier)
     resolved_target_name_vfs_overlay = resolved_target_name + "_vfs"
-
-    def _xcframework_slice_imports(path):
-        """
-        Returns a tuple of the headers, module map and swiftmodules for the given path in a .xcframework.
-        """
-        hdrs = native.glob(["%s/**/*.h" % path], allow_empty = True)
-        modulemaps = native.glob(["%s/**/*.modulemap" % path], allow_empty = True)
-        swiftmodules = native.glob(["%s/**/*.swiftmodule/*.*" % path], allow_empty = True)
-        modulemap = modulemaps[0] if modulemaps else None
-        return hdrs, modulemap, swiftmodules
-
-    def _make_xcframework_vfs(hdrs, modulemap, swiftmodules, static = False):
-        """
-        Creates a framework_vfs_overlay with the provided arguments.
-
-        If static is True, the framework_vfs_overlay will be created within the context
-        of a static library within a .xcframework.
-        """
-        imported_framework_name = _find_imported_xcframework_name(hdrs) if static else _find_imported_framework_name(hdrs)
-        vfs_framework_name = imported_framework_name if imported_framework_name else xcframework_name
-        framework_vfs_overlay(
-            name = resolved_target_name_vfs_overlay,
-            framework_name = vfs_framework_name,
-            modulemap = modulemap,
-            swiftmodules = swiftmodules,
-            hdrs = hdrs,
-            tags = _MANUAL,
-            extra_search_paths = None if static else xcframework_name,
-        )
 
     if (linkage, packaging) == ("dynamic", "framework"):
         apple_dynamic_framework_import(
@@ -289,7 +307,13 @@ def _xcframework_slice(*, xcframework_name, identifier, platform, platform_varia
             tags = _MANUAL,
         )
         import_headers, import_module_map, import_swiftmodules = _xcframework_slice_imports(path)
-        _make_xcframework_vfs(import_headers, import_module_map, import_swiftmodules)
+        _make_xcframework_vfs(
+            xcframework_name,
+            resolved_target_name_vfs_overlay,
+            import_headers,
+            import_module_map,
+            import_swiftmodules,
+        )
     elif (linkage, packaging) == ("static", "framework"):
         apple_static_framework_import(
             name = resolved_target_name,
@@ -301,7 +325,13 @@ def _xcframework_slice(*, xcframework_name, identifier, platform, platform_varia
             tags = _MANUAL,
         )
         import_headers, import_module_map, import_swiftmodules = _xcframework_slice_imports(path)
-        _make_xcframework_vfs(import_headers, import_module_map, import_swiftmodules)
+        _make_xcframework_vfs(
+            xcframework_name,
+            resolved_target_name_vfs_overlay,
+            import_headers,
+            import_module_map,
+            import_swiftmodules,
+        )
     elif (linkage, packaging) == ("static", "library"):
         # For a static library the `path` is the path to the library (`.a`) itself.
         # We need the path to the top-level slice directory so we can find headers, modulemaps and swiftmodules.
@@ -314,7 +344,14 @@ def _xcframework_slice(*, xcframework_name, identifier, platform, platform_varia
             includes = ["%s/Headers" % slice_dir],
             tags = _MANUAL,
         )
-        _make_xcframework_vfs(import_headers, import_module_map, import_swiftmodules, static = True)
+        _make_xcframework_vfs(
+            xcframework_name,
+            resolved_target_name_vfs_overlay,
+            import_headers,
+            import_module_map,
+            import_swiftmodules,
+            static = True,
+        )
     else:
         fail("Unsupported xcframework slice type {} ({}) in {}".format(
             build_type,
@@ -402,18 +439,24 @@ def _xcframework(*, library_name, name, slices):
 
     native.alias(
         name = xcframework_name,
-        actual = select(conditions, no_match_error = "Unable to find a matching slice for {}.xcframework used by {}".format(
-            name,
-            library_name,
-        )),
+        actual = select(
+            conditions,
+            no_match_error = "Unable to find a matching slice for {}.xcframework used by {}".format(
+                name,
+                library_name,
+            ),
+        ),
         tags = _MANUAL,
     )
     native.alias(
         name = xcframework_name_vfs,
-        actual = select(conditions_vfs, no_match_error = "Unable to find a matching vfs overlay for {}.xcframework used by {}".format(
-            name,
-            library_name,
-        )),
+        actual = select(
+            conditions_vfs,
+            no_match_error = "Unable to find a matching vfs overlay for {}.xcframework used by {}".format(
+                name,
+                library_name,
+            ),
+        ),
         tags = _MANUAL,
     )
     return xcframework_name, xcframework_name_vfs
@@ -448,7 +491,39 @@ def _find_imported_xcframework_name(outputs):
         return fw_name
     return None
 
-def apple_library(name, library_tools = {}, export_private_headers = True, namespace_is_module_name = True, default_xcconfig_name = None, xcconfig = {}, xcconfig_by_build_setting = {}, objc_defines = [], swift_defines = [], **kwargs):
+def _sorted_unique_list(lst):
+    return sorted({k: None for k in lst}.keys())
+
+_EMPTY_COPTS = ""
+
+_SOURCE_TYPE_C = "c"
+_SOURCE_TYPE_CPP = "cpp"
+_SOURCE_TYPE_OBJC = "objc"
+_SOURCE_TYPE_OBJCPP = "objcpp"
+_SOURCE_TYPE_SWIFT = "swift"
+
+_SOURCE_TYPE_TO_FILE_EXT = {
+    _SOURCE_TYPE_C: (".c",),
+    _SOURCE_TYPE_CPP: (".cc", ".cpp", ".cxx"),
+    _SOURCE_TYPE_OBJC: (".m", ".s", ".S"),
+    _SOURCE_TYPE_OBJCPP: (".mm",),
+    _SOURCE_TYPE_SWIFT: (".swift",),
+}
+
+def apple_library(
+        name,
+        srcs = [],
+        srcs_by_copts = {},
+        library_tools = {},
+        export_private_headers = True,
+        namespace_is_module_name = True,
+        default_xcconfig_name = None,
+        xcconfig = {},
+        xcconfig_by_build_setting = {},
+        objc_defines = [],
+        swift_defines = [],
+        headermap_strip_prefix = None,
+        **kwargs):
     """Create libraries for native source code on Apple platforms.
 
     Automatically handles mixed-source libraries and comes with
@@ -477,10 +552,19 @@ def apple_library(name, library_tools = {}, export_private_headers = True, names
         Struct with a bunch of info
     """
     library_tools = dict(_DEFAULT_LIBRARY_TOOLS, **library_tools)
-    swift_sources = []
-    objc_sources = []
+
+    # TODO - Convert the rest of these to be `_by_copts`
+    # A mapping from {source_type: {copts: [sources...]}} where
+    #   - source_type is a key of the _SOURCE_TYPE_TO_FILE_EXT dict
+    #   - copts is a string of the copts to apply to the sources
+    #   - sources is a list of source paths
+    source_type_to_copts_to_sources = {}
+
+    #    swift_sources = []
+    #    objc_sources_by_copts = {}
     objc_non_arc_sources = []
-    cpp_sources = []
+
+    #    cpp_sources_by_copts = {}
     intent_sources = []
     public_headers = kwargs.pop("public_headers", [])
     private_headers = kwargs.pop("private_headers", [])
@@ -495,28 +579,44 @@ def apple_library(name, library_tools = {}, export_private_headers = True, names
         if f.endswith((".m", ".mm")):
             objc_non_arc_sources.append(f)
         else:
-            kwargs["srcs"] = kwargs.pop("srcs", []) + [f]
-    for f in sorted(kwargs.pop("srcs", []), key = _uppercase_string):
-        if f.endswith((".h", ".hh", ".hpp")):
-            if (private_headers and sets.contains(private_headers, f)) or \
-               (public_headers and sets.contains(public_headers, f)):
-                pass
-            elif public_headers and private_headers:
-                objc_non_exported_hdrs.append(f)
-            elif public_headers:
-                objc_private_hdrs.append(f)
+            srcs.append(f)
+
+    # Unfreeze the dict
+    srcs_by_copts = dict(srcs_by_copts)
+    if srcs:
+        srcs_by_copts.setdefault(_EMPTY_COPTS, []).extend(srcs)
+    for copts in sorted(srcs_by_copts.keys()):
+        srcs = srcs_by_copts[copts]
+        for f in sorted(srcs, key = _uppercase_string):
+            if f.endswith((".inc", ".h", ".hh", ".hpp")):
+                if (private_headers and sets.contains(private_headers, f)) or \
+                   (public_headers and sets.contains(public_headers, f)):
+                    pass
+                elif public_headers and private_headers:
+                    objc_non_exported_hdrs.append(f)
+                elif public_headers:
+                    objc_private_hdrs.append(f)
+                else:
+                    objc_hdrs.append(f)
+            elif f.endswith((".intentdefinition")):
+                intent_sources.append(f)
             else:
-                objc_hdrs.append(f)
-        elif f.endswith((".inc", ".m", ".mm", ".c", ".s", ".S")):
-            objc_sources.append(f)
-        elif f.endswith((".swift")):
-            swift_sources.append(f)
-        elif f.endswith((".cc", ".cpp")):
-            cpp_sources.append(f)
-        elif f.endswith((".intentdefinition")):
-            intent_sources.append(f)
-        else:
-            fail("Unable to compile %s in apple_framework %s" % (f, name))
+                found_source_type = False
+                for source_type, extensions in _SOURCE_TYPE_TO_FILE_EXT.items():
+                    if f.endswith(extensions):
+                        found_source_type = True
+                        source_type_to_copts_to_sources.setdefault(source_type, {}).setdefault(copts, []).append(f)
+                if not found_source_type:
+                    fail("Unable to compile file '%s' in apple_* target '%s', unknown extension." % (f, name))
+
+    swift_sources_by_copt = source_type_to_copts_to_sources.get(_SOURCE_TYPE_SWIFT, {})
+    if len(swift_sources_by_copt) == 0:
+        swift_sources = []
+    elif len(swift_sources_by_copt) == 1:
+        swift_sources = swift_sources_by_copt.values()[0]
+    else:
+        # TODO - Handle multiple copts, similar to cc/objc
+        fail("Can only have one set of copts for Swift sources, instead have:\n{}".format(swift_sources_by_copt))
 
     module_name = kwargs.pop("module_name", name)
     namespace = module_name if namespace_is_module_name else name
@@ -562,10 +662,17 @@ def apple_library(name, library_tools = {}, export_private_headers = True, names
     platforms = kwargs.pop("platforms", None)
     private_deps = [] + kwargs.pop("private_deps", [])
     lib_names = []
-    fetch_default_xcconfig = library_tools["fetch_default_xcconfig"](name, library_tools, default_xcconfig_name, **kwargs) if default_xcconfig_name else {}
+    fetch_default_xcconfig_func = library_tools["fetch_default_xcconfig"]
+
+    #    xcconfig = dict(xcconfig)
+    #    xcconfig.setdefault("PRODUCT_MODULE_NAME", module_name)
+    fetch_default_xcconfig = fetch_default_xcconfig_func(name, library_tools, default_xcconfig_name, **kwargs) if default_xcconfig_name else {}
     copts_by_build_setting = copts_by_build_setting_with_defaults(xcconfig, fetch_default_xcconfig, xcconfig_by_build_setting)
+    if name == "React-callinvoker" or name == "React-Core":
+        print(fetch_default_xcconfig, copts_by_build_setting)
     enable_framework_vfs = kwargs.pop("enable_framework_vfs", False) or namespace_is_module_name
     defines = kwargs.pop("defines", [])
+    defines_module = xcconfig.get("DEFINES_MODULE", "") == "YES"
 
     for (k, v) in {"momc_copts": momc_copts, "mapc_copts": mapc_copts, "ibtool_copts": ibtool_copts}.items():
         if v:
@@ -612,7 +719,7 @@ def apple_library(name, library_tools = {}, export_private_headers = True, names
             )
 
             objc_hdrs.append(intent_name)
-            objc_sources.append(intent_name)
+            source_type_to_copts_to_sources.setdefault(_SOURCE_TYPE_OBJC, {}).setdefault(_EMPTY_COPTS, []).append(intent_name)
             data.append(intent)
 
     if linkopts:
@@ -770,7 +877,8 @@ def apple_library(name, library_tools = {}, export_private_headers = True, names
             "//conditions:default": vendored_deps,
         })
 
-    resource_bundles = library_tools["resource_bundle_generator"](
+    resource_bundle_generator = library_tools["resource_bundle_generator"]
+    resource_bundles = resource_bundle_generator(
         name = name,
         library_tools = library_tools,
         resource_bundles = kwargs.pop("resource_bundles", {}),
@@ -780,20 +888,23 @@ def apple_library(name, library_tools = {}, export_private_headers = True, names
     )
     deps += resource_bundles
 
-    objc_libname = "%s_objc" % name
+    objc_libname_base = "%s_objc" % name
     swift_libname = "%s_swift" % name
-    cpp_libname = "%s_cpp" % name
+    cpp_libname_base = "%s_cpp" % name
 
     framework_vfs_overlay_name = name + "_vfs"
     framework_vfs_overlay_name_swift = swift_libname + "_vfs"
 
-    # TODO: remove under certian circumstances when framework if set
+    # TODO: remove under certain circumstances when framework if set
     # Needs to happen before headermaps are made, so the generated umbrella header gets added to those headermaps
-    has_compile_srcs = (objc_hdrs or objc_private_hdrs or swift_sources or objc_sources or cpp_sources)
+    has_compile_srcs = (
+        objc_hdrs or objc_private_hdrs or len(source_type_to_copts_to_sources) > 0
+    )
     generate_umbrella_module = (namespace_is_module_name and has_compile_srcs)
     if generate_umbrella_module:
         if not module_map:
-            umbrella_header = library_tools["umbrella_header_generator"](
+            umbrella_header_generator = library_tools["umbrella_header_generator"]
+            umbrella_header = umbrella_header_generator(
                 name = name,
                 library_tools = library_tools,
                 generate_default_umbrella_header = generate_default_umbrella_header,
@@ -804,7 +915,8 @@ def apple_library(name, library_tools = {}, export_private_headers = True, names
             )
             if umbrella_header:
                 objc_hdrs.append(umbrella_header)
-            module_map = library_tools["modulemap_generator"](
+            modulemap_generator = library_tools["modulemap_generator"]
+            module_map = modulemap_generator(
                 name = name,
                 library_tools = library_tools,
                 umbrella_header = paths.basename(umbrella_header),
@@ -843,63 +955,70 @@ def apple_library(name, library_tools = {}, export_private_headers = True, names
         "-F{}".format(VFS_OVERLAY_FRAMEWORK_SEARCH_PATH),
     ]
 
-    ## BEGIN HMAP
+    # TODO - Use better xcconfig parsing, including merging
+    use_headermap = xcconfig.get("USE_HEADERMAP", "YES") == "YES"
+    if use_headermap:
+        ## BEGIN HMAP
 
-    public_hmap_name = name + "_public_hmap"
-    public_hdrs_filegroup = name + "_public_hdrs"
-    native.filegroup(
-        name = public_hdrs_filegroup,
-        srcs = objc_hdrs,
-        tags = _MANUAL,
-    )
+        public_hmap_name = name + "_public_hmap"
+        public_hdrs_filegroup = name + "_public_hdrs"
+        native.filegroup(
+            name = public_hdrs_filegroup,
+            srcs = objc_hdrs,
+            tags = _MANUAL,
+        )
 
-    # Public hmaps are for vendored static libs to export their header only.
-    # Other dependencies' headermaps will be generated by li_ios_framework
-    # rules.
-    headermap(
-        name = public_hmap_name,
-        namespace = namespace,
-        hdrs = [public_hdrs_filegroup],
-        tags = _MANUAL,
-    )
-    private_deps.append(public_hmap_name)
+        # Public hmaps are for vendored static libs to export their header only.
+        # Other dependencies' headermaps will be generated by li_ios_framework
+        # rules.
+        headermap(
+            name = public_hmap_name,
+            namespace = namespace,
+            strip_prefix = headermap_strip_prefix,
+            hdrs = [public_hdrs_filegroup],
+            tags = _MANUAL,
+        )
+        private_deps.append(public_hmap_name)
 
-    private_hmap_name = name + "_private_hmap"
-    private_angled_hmap_name = name + "_private_angled_hmap"
-    private_hdrs_filegroup = name + "_private_hdrs"
-    private_angled_hdrs_filegroup = name + "_private_angled_hdrs"
+        private_hmap_name = name + "_private_hmap"
+        private_angled_hmap_name = name + "_private_angled_hmap"
+        private_hdrs_filegroup = name + "_private_hdrs"
+        private_angled_hdrs_filegroup = name + "_private_angled_hdrs"
 
-    native.filegroup(
-        name = private_hdrs_filegroup,
-        srcs = objc_non_exported_hdrs + objc_private_hdrs + objc_hdrs,
-        tags = _MANUAL,
-    )
-    native.filegroup(
-        name = private_angled_hdrs_filegroup,
-        srcs = objc_non_exported_hdrs + objc_private_hdrs,
-        tags = _MANUAL,
-    )
+        native.filegroup(
+            name = private_hdrs_filegroup,
+            # Make sure there's no duplicates
+            srcs = _sorted_unique_list(objc_non_exported_hdrs + objc_private_hdrs + objc_hdrs),
+            tags = _MANUAL,
+        )
+        native.filegroup(
+            name = private_angled_hdrs_filegroup,
+            srcs = objc_non_exported_hdrs + objc_private_hdrs,
+            tags = _MANUAL,
+        )
 
-    headermap(
-        name = private_hmap_name,
-        hdrs = [private_hdrs_filegroup],
-        tags = _MANUAL,
-    )
-    private_deps.append(private_hmap_name)
-    headermap(
-        name = private_angled_hmap_name,
-        namespace = namespace,
-        hdrs = [private_angled_hdrs_filegroup],
-        tags = _MANUAL,
-    )
-    private_deps.append(private_angled_hmap_name)
+        headermap(
+            name = private_hmap_name,
+            strip_prefix = headermap_strip_prefix,
+            hdrs = [private_hdrs_filegroup],
+            tags = _MANUAL,
+        )
+        private_deps.append(private_hmap_name)
+        headermap(
+            name = private_angled_hmap_name,
+            namespace = namespace,
+            strip_prefix = headermap_strip_prefix,
+            hdrs = [private_angled_hdrs_filegroup],
+            tags = _MANUAL,
+        )
+        private_deps.append(private_angled_hmap_name)
 
-    ## END HMAP
+        _append_headermap_copts(private_hmap_name, "-I", additional_objc_copts, additional_swift_copts, additional_cc_copts)
+        _append_headermap_copts(public_hmap_name, "-I", additional_objc_copts, additional_swift_copts, additional_cc_copts)
+        _append_headermap_copts(private_angled_hmap_name, "-I", additional_objc_copts, additional_swift_copts, additional_cc_copts)
+        _append_headermap_copts(private_hmap_name, "-iquote", additional_objc_copts, additional_swift_copts, additional_cc_copts)
 
-    _append_headermap_copts(private_hmap_name, "-I", additional_objc_copts, additional_swift_copts, additional_cc_copts)
-    _append_headermap_copts(public_hmap_name, "-I", additional_objc_copts, additional_swift_copts, additional_cc_copts)
-    _append_headermap_copts(private_angled_hmap_name, "-I", additional_objc_copts, additional_swift_copts, additional_cc_copts)
-    _append_headermap_copts(private_hmap_name, "-iquote", additional_objc_copts, additional_swift_copts, additional_cc_copts)
+        ## END HMAP
 
     additional_objc_copts += [
         "-fmodules",
@@ -917,7 +1036,8 @@ def apple_library(name, library_tools = {}, export_private_headers = True, names
     if swift_version:
         additional_swift_copts += ["-swift-version", swift_version]
 
-    module_data = library_tools["wrap_resources_in_filegroup"](name = module_name + "_data", srcs = data, testonly = kwargs.get("testonly", False))
+    wrap_resources_in_filegroup = library_tools["wrap_resources_in_filegroup"]
+    module_data = wrap_resources_in_filegroup(name = module_name + "_data", srcs = data, testonly = kwargs.get("testonly", False))
 
     if swift_sources:
         additional_swift_copts.extend(("-Xcc", "-I."))
@@ -928,7 +1048,7 @@ def apple_library(name, library_tools = {}, export_private_headers = True, names
             additional_swift_copts.append(
                 "-import-underlying-module",
             )
-        swiftc_inputs = other_inputs + objc_hdrs + objc_private_hdrs
+        swiftc_inputs = other_inputs + _sorted_unique_list(objc_hdrs + objc_private_hdrs)
         if module_map:
             swiftc_inputs.append(module_map)
         if swift_objc_bridging_header:
@@ -1020,70 +1140,119 @@ def apple_library(name, library_tools = {}, export_private_headers = True, names
         private_deps.append(swift_angle_bracket_hmap_name)
         _append_headermap_copts(swift_angle_bracket_hmap_name, "-I", additional_objc_copts, additional_swift_copts, additional_cc_copts)
 
-    # Note: this line is intentionally disabled
-    if cpp_sources:
-        additional_cc_copts.append("-I.")
-        native.objc_library(
-            name = cpp_libname,
-            srcs = cpp_sources + objc_private_hdrs + objc_non_exported_hdrs,
-            hdrs = objc_hdrs,
-            copts = copts_by_build_setting.cc_copts + cc_copts + additional_cc_copts,
-            deps = deps + private_deps,
-            defines = defines,
-            tags = tags_manual,
-            testonly = kwargs.get("testonly", False),
-        )
-        lib_names.append(cpp_libname)
+    additional_cc_copts.append("-I.")
+
+    cpp_lib_index = 0
+    for cpp_source_type, cpp_xcconfig_copts in [
+        (_SOURCE_TYPE_C, copts_by_build_setting.c_copts),
+        (_SOURCE_TYPE_CPP, copts_by_build_setting.cpp_copts),
+    ]:
+        cpp_copts_to_sources = source_type_to_copts_to_sources.get(cpp_source_type, {})
+        for cpp_sources_specific_copts in sorted(cpp_copts_to_sources.keys()):
+            cpp_sources = cpp_copts_to_sources[cpp_sources_specific_copts]
+            if cpp_lib_index == 0:
+                cpp_libname = cpp_libname_base
+            else:
+                cpp_libname = "{}_{}".format(cpp_libname_base, cpp_lib_index)
+            cpp_lib_index += 1
+
+            #            if cpp_libname == "Yoga_cpp":
+            #                for k, v in dict(
+            #                    name = cpp_libname,
+            #                    srcs = cpp_sources + objc_private_hdrs + objc_non_exported_hdrs,
+            #                    hdrs = objc_hdrs,
+            #                    copts = cpp_xcconfig_copts + cc_copts + [cpp_sources_specific_copts] + additional_cc_copts,
+            #                    deps = deps + private_deps,
+            #                    defines = defines,
+            #                    tags = tags_manual,
+            #                    testonly = kwargs.get("testonly", False),
+            #                ).items():
+            #                    print(k, v)
+            native.objc_library(
+                name = cpp_libname,
+                srcs = cpp_sources + objc_private_hdrs + objc_non_exported_hdrs,
+                hdrs = objc_hdrs,
+                copts = cpp_xcconfig_copts + cc_copts + [cpp_sources_specific_copts] + additional_cc_copts,
+                deps = deps + private_deps,
+                defines = defines,
+                tags = tags_manual,
+                testonly = kwargs.get("testonly", False),
+            )
+
+            #            if cpp_libname == "Yoga_cpp":
+            #                print("DONE")
+            lib_names.append(cpp_libname)
+
+    if not defines_module:
+        # TODO - this feels super hacky
+        module_map = None
 
     additional_objc_copts.append("-I.")
-    index_while_building_objc_copts = select({
-        "@build_bazel_rules_ios//:use_global_index_store": [
-            # Note: this won't work work for remote caching yet. It uses a
-            # _different_ global index for objc than so that the BEP grep in
-            # rules_ios picks this up.
-            # Checkout the task roadmap for future improvements:
-            # Docs/index_while_building.md
-            "-index-store-path",
-            "bazel-out/rules_ios_global_index_store.indexstore",
-        ],
-        "//conditions:default": [
-            "-index-store-path",
-            "$(GENDIR)/{package}/rules_ios_objc_library_{libname}.indexstore".format(
-                package = native.package_name(),
-                libname = objc_libname,
-            ),
-        ],
-    })
+    objc_lib_index = 0
+    for objc_source_type, objc_xcconfig_copts in [
+        (_SOURCE_TYPE_OBJC, copts_by_build_setting.objc_copts),
+        (_SOURCE_TYPE_OBJCPP, copts_by_build_setting.objcpp_copts),
+    ]:
+        objc_copts_to_sources = source_type_to_copts_to_sources.get(objc_source_type, {})
+        for objc_sources_specific_copts in sorted(objc_copts_to_sources.keys()):
+            objc_sources = objc_copts_to_sources[objc_sources_specific_copts]
+            if objc_lib_index == 0:
+                objc_libname = objc_libname_base
+            else:
+                objc_libname = "{}_{}".format(objc_libname_base, objc_lib_index)
+            is_default_copts = objc_lib_index == 0
+            objc_lib_index += 1
 
-    additional_objc_vfs_deps = select({
-        "@build_bazel_rules_ios//:virtualize_frameworks": [framework_vfs_overlay_name_swift] + [framework_vfs_overlay_name],
-        "//conditions:default": [framework_vfs_overlay_name_swift] + [framework_vfs_overlay_name] if enable_framework_vfs else [],
-    })
-    additional_objc_vfs_copts = select({
-        "@build_bazel_rules_ios//:virtualize_frameworks": framework_vfs_objc_copts,
-        "//conditions:default": framework_vfs_objc_copts if enable_framework_vfs else [],
-    })
-    if module_map:
-        objc_hdrs.append(module_map)
+            index_while_building_objc_copts = select({
+                "@build_bazel_rules_ios//:use_global_index_store": [
+                    # Note: this won't work work for remote caching yet. It uses a
+                    # _different_ global index for objc than so that the BEP grep in
+                    # rules_ios picks this up.
+                    # Checkout the task roadmap for future improvements:
+                    # Docs/index_while_building.md
+                    "-index-store-path",
+                    "bazel-out/rules_ios_global_index_store.indexstore",
+                ],
+                "//conditions:default": [
+                    "-index-store-path",
+                    "$(GENDIR)/{package}/rules_ios_objc_library_{libname}.indexstore".format(
+                        package = native.package_name(),
+                        libname = objc_libname,
+                    ),
+                ],
+            })
 
-    native.objc_library(
-        name = objc_libname,
-        srcs = objc_sources + objc_private_hdrs + objc_non_exported_hdrs,
-        non_arc_srcs = objc_non_arc_sources,
-        hdrs = objc_hdrs,
-        copts = copts_by_build_setting.objc_copts + objc_copts + additional_objc_vfs_copts + additional_objc_copts + index_while_building_objc_copts,
-        deps = deps + private_deps + lib_names + additional_objc_vfs_deps,
-        module_map = module_map,
-        sdk_dylibs = sdk_dylibs,
-        sdk_frameworks = sdk_frameworks,
-        weak_sdk_frameworks = weak_sdk_frameworks,
-        sdk_includes = sdk_includes,
-        pch = pch,
-        data = [] if swift_sources else [module_data],
-        tags = tags_manual,
-        defines = defines + objc_defines,
-        **kwargs
-    )
+            additional_objc_vfs_deps = select({
+                "@build_bazel_rules_ios//:virtualize_frameworks": [framework_vfs_overlay_name_swift] + [framework_vfs_overlay_name],
+                "//conditions:default": [framework_vfs_overlay_name_swift] + [framework_vfs_overlay_name] if enable_framework_vfs else [],
+            })
+            additional_objc_vfs_copts = select({
+                "@build_bazel_rules_ios//:virtualize_frameworks": framework_vfs_objc_copts,
+                "//conditions:default": framework_vfs_objc_copts if enable_framework_vfs else [],
+            })
+            if module_map and is_default_copts:
+                objc_hdrs.append(module_map)
+
+            native.objc_library(
+                name = objc_libname,
+                srcs = objc_sources + objc_private_hdrs + objc_non_exported_hdrs,
+                non_arc_srcs = objc_non_arc_sources if is_default_copts else None,
+                hdrs = objc_hdrs,
+                copts = objc_xcconfig_copts + objc_copts + [objc_sources_specific_copts] + additional_objc_vfs_copts + additional_objc_copts + index_while_building_objc_copts,
+                deps = deps + private_deps + lib_names + additional_objc_vfs_deps,
+                module_map = module_map if is_default_copts else None,
+                sdk_dylibs = sdk_dylibs,
+                sdk_frameworks = sdk_frameworks,
+                weak_sdk_frameworks = weak_sdk_frameworks,
+                sdk_includes = sdk_includes,
+                pch = pch,
+                data = [] if swift_sources else [module_data],
+                tags = tags_manual,
+                defines = defines + objc_defines,
+                **kwargs
+            )
+            lib_names.append(objc_libname)
+
     launch_screen_storyboard_name = name + "_launch_screen_storyboard"
     native.filegroup(
         name = launch_screen_storyboard_name,
@@ -1091,7 +1260,6 @@ def apple_library(name, library_tools = {}, export_private_headers = True, names
         output_group = "launch_screen_storyboard",
         tags = _MANUAL,
     )
-    lib_names.append(objc_libname)
 
     if export_private_headers:
         private_headers_name = "%s_private_headers" % name
