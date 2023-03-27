@@ -1018,7 +1018,7 @@ def apple_library(name, library_tools = {}, export_private_headers = True, names
         _append_headermap_copts(swift_angle_bracket_hmap_name, "-I", additional_objc_copts, additional_swift_copts, additional_cc_copts)
 
     # Note: this line is intentionally disabled
-    if cpp_sources:
+    if cpp_sources and False:
         additional_cc_copts.append("-I.")
         native.objc_library(
             name = cpp_libname,
