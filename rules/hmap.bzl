@@ -17,7 +17,9 @@ def _make_hmap(actions, headermap_builder, output, namespace, hdrs_lists):
         headermap_builder: an executable pointing to @bazel_build_rules_ios//rules/hmap:hmaptool
         output: the output file that will contain the built hmap
         namespace: the prefix to be used for header imports
-        hdrs_lists: an array of enumerables containing headers to be added to the hmap
+        hdrs_lists: an array of enumerables containing a tuple of (src, dest) where
+                    src is the file to be added to the hmap, and dest is the relative
+                    path where this header should be added to the hmap
     """
 
     args = actions.args()
@@ -27,7 +29,9 @@ def _make_hmap(actions, headermap_builder, output, namespace, hdrs_lists):
     args.add("--output", output)
 
     for hdrs in hdrs_lists:
-        args.add_all(hdrs)
+        for hdr in hdrs:
+            args.add(hdr[0])
+            args.add(hdr[1])
 
     args.set_param_file_format(format = "multiline")
     args.use_param_file("@%s")
@@ -51,13 +55,21 @@ def _make_headermap_impl(ctx):
 
     :return: provider with the info for this rule
     """
-    hdrs_lists = [ctx.files.hdrs]
+    hdrs_lists = [zip(ctx.files.hdrs, ctx.attr.hdr_dests)]
 
     for provider in ctx.attr.direct_hdr_providers:
         if apple_common.Objc in provider:
-            hdrs_lists.append(getattr(provider[apple_common.Objc], "direct_headers", []))
+            extra_headers = [
+                (s, s.basename)
+                for s in getattr(provider[apple_common.Objc], "direct_headers", [])
+            ]
+            hdrs_lists.append(extra_headers)
         if CcInfo in provider:
-            hdrs_lists.append(provider[CcInfo].compilation_context.direct_headers)
+            extra_headers = [
+                (s, s.basename)
+                for s in provider[CcInfo].compilation_context.direct_headers
+            ]
+            hdrs_lists.append(extra_headers)
 
         if len(hdrs_lists) == 1:
             # means neither apple_common.Objc nor CcInfo in hdr provider target
@@ -106,6 +118,10 @@ headermap = rule(
             mandatory = True,
             allow_files = True,
             doc = "The list of headers included in the headermap",
+        ),
+        "hdr_dests": attr.string_list(
+            mandatory = True,
+            doc = "The list of relative paths for each entry in hdrs",
         ),
         "direct_hdr_providers": attr.label_list(
             mandatory = False,
