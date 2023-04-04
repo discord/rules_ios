@@ -43,63 +43,48 @@ _APPLE_FRAMEWORK_PACKAGING_KWARGS = [
     "exported_symbols_lists",
 ]
 
-_HEADER_EXTS = {
-    "srcs": (".h", ".hh", ".hpp"),
-    "public_headers": (".inc", ".h", ".hh", ".hpp"),
-    "private_headers": (".inc", ".h", ".hh", ".hpp"),
-}
-
-def _generate_headers_mapping(headers_mapping, kwargs):
-    if types.is_dict(headers_mapping):
-        return headers_mapping
-
-    to_map = []
-    for attr in headers_mapping.attrs:
-        exts = _HEADER_EXTS[attr]
-        to_map += [h for h in kwargs.get(attr, []) if h.endswith(exts)]
-
-    headers = collections.uniq(to_map)
-    if headers_mapping.op == "strip":
-        return header_paths.mapped_without_prefix(headers, headers_mapping.pattern)
-    elif headers_mapping.op == "add":
-        return {h: headers_mapping.pattern + h for h in headers}
-    else:
-        fail("Invalid headers_mapping `{}`".format(headers_mapping))
-
-
-def apple_framework(name, apple_library = apple_library, headers_mapping = {}, **kwargs):
+def apple_framework(
+        name,
+        apple_library = apple_library,
+        infoplists = [],
+        infoplists_by_build_setting = {},
+        xcconfig = {},
+        xcconfig_by_build_setting = {},
+        **kwargs):
     """Builds and packages an Apple framework.
 
     Args:
         name: The name of the framework.
         apple_library: The macro used to package sources into a library.
-        headers_mapping: Either a dictionary, or the value from add_prefix / strip_prefix.
+        infoplists: A list of Info.plist files to be merged into the framework.
+        infoplists_by_build_setting: A dictionary of infoplists grouped by bazel build setting.
 
-                         If a dictionary, a mapping of {str: str}, where the key is a
-                         path to a header, and the value where that header should be
-                         placed in Headers, PrivateHeaders, umbrella headers, hmaps, etc.
+                                     Each value is applied if the respective bazel build setting
+                                     is resolved during the analysis phase.
 
-                         If the result of header_paths.add_prefix, then the attributes
-                         specified will have the prefix appended to the beginning.
+                                     If '//conditions:default' is not set the value in 'infoplists'
+                                     is set as default.
+        xcconfig: A dictionary of xcconfigs to be applied to the framework by default.
+        xcconfig_by_build_setting: A dictionary of xcconfigs grouped by bazel build setting.
 
-                         If the result of header_paths.strip_prefix, then the
-                         attributes specified will have the prefix reoved from the
-                         beginning.
+                                   Each value is applied if the respective bazel build setting
+                                   is resolved during the analysis phase.
+
+                                   If '//conditions:default' is not set the value in 'xcconfig'
+                                   is set as default.
         **kwargs: Arguments passed to the apple_library and apple_framework_packaging rules as appropriate.
     """
     framework_packaging_kwargs = {arg: kwargs.pop(arg) for arg in _APPLE_FRAMEWORK_PACKAGING_KWARGS if arg in kwargs}
     kwargs["enable_framework_vfs"] = kwargs.pop("enable_framework_vfs", True)
 
-    infoplists_by_build_setting = kwargs.pop("infoplists_by_build_setting", {})
-    default_infoplists = kwargs.pop("infoplists", [])
-    infoplists = None
-    if len(infoplists_by_build_setting.values()) > 0 or len(default_infoplists) > 0:
-        infoplists = select(process_infoplists(
+    merged_infoplists = None
+    if len(infoplists_by_build_setting.values()) > 0 or len(infoplists) > 0:
+        merged_infoplists = select(process_infoplists(
             name = name,
-            infoplists = default_infoplists,
+            infoplists = infoplists,
             infoplists_by_build_setting = infoplists_by_build_setting,
-            xcconfig = kwargs.get("xcconfig", {}),
-            xcconfig_by_build_setting = kwargs.get("xcconfig_by_build_setting", {}),
+            xcconfig = xcconfig,
+            xcconfig_by_build_setting = xcconfig_by_build_setting,
         ))
     environment_plist = kwargs.pop("environment_plist", select({
         "@build_bazel_rules_ios//rules/apple_platform:ios": "@build_bazel_rules_apple//apple/internal:environment_plist_ios",
@@ -111,10 +96,14 @@ def apple_framework(name, apple_library = apple_library, headers_mapping = {}, *
 
     testonly = kwargs.pop("testonly", False)
 
-    if headers_mapping:
-        headers_mapping = _generate_headers_mapping(headers_mapping, kwargs)
+    library = apple_library(
+        name = name,
+        testonly = testonly,
+        xcconfig = xcconfig,
+        xcconfig_by_build_setting = xcconfig_by_build_setting,
+        **kwargs
+    )
 
-    library = apple_library(name = name, testonly = testonly, headers_mapping = headers_mapping, **kwargs)
     framework_deps = []
 
     # Setup force loading here - only for direct deps / direct libs and when `link_dynamic` is set.
@@ -133,7 +122,7 @@ def apple_framework(name, apple_library = apple_library, headers_mapping = {}, *
     apple_framework_packaging(
         name = name,
         framework_name = library.namespace,
-        infoplists = infoplists,
+        infoplists = merged_infoplists,
         environment_plist = environment_plist,
         transitive_deps = library.transitive_deps,
         vfs = library.import_vfsoverlays,
