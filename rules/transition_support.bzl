@@ -80,7 +80,13 @@ def _apple_rule_transition_impl(settings, attr):
 
     # Transition ios_multi_cpus to to a single cpu when building for iOS.
     # Rules using this transition (e.g., apple_framework_packaging, precompiled_apple_resource_bundle) don't need any artifacts from other archs.
-    ios_multi_cpus = cpu_string[4:] if platform_type == "ios" else settings["//command_line_option:ios_multi_cpus"]
+    #ios_multi_cpus = cpu_string[4:] if platform_type == "ios" else settings["//command_line_option:ios_multi_cpus"]
+
+    # NOTE(nmj): Removed the logic above, as it caused problems during the migration
+    #            from rules_pods, where those libs used every CPU provided, and
+    #            rules_ios only used one of the cpus, leading to a split configured
+    #            target graph. Just use the CPUs that we were given on the CLI.
+    ios_multi_cpus = settings["//command_line_option:ios_multi_cpus"]
 
     ret = {
         "//command_line_option:apple configuration distinguisher": "applebin_" + platform_type,
