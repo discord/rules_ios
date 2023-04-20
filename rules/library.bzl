@@ -892,9 +892,9 @@ def apple_library(name, library_tools = {}, export_private_headers = True, names
 
     ## END HMAP
 
-    _append_headermap_copts(private_hmap_name, "-I", additional_objc_copts, additional_swift_copts, additional_cc_copts)
-    _append_headermap_copts(public_hmap_name, "-I", additional_objc_copts, additional_swift_copts, additional_cc_copts)
-    _append_headermap_copts(private_angled_hmap_name, "-I", additional_objc_copts, additional_swift_copts, additional_cc_copts)
+    _append_headermap_copts(private_hmap_name, "-idirafter", additional_objc_copts, additional_swift_copts, additional_cc_copts)
+    _append_headermap_copts(public_hmap_name, "-idirafter", additional_objc_copts, additional_swift_copts, additional_cc_copts)
+    _append_headermap_copts(private_angled_hmap_name, "-idirafter", additional_objc_copts, additional_swift_copts, additional_cc_copts)
     _append_headermap_copts(private_hmap_name, "-iquote", additional_objc_copts, additional_swift_copts, additional_cc_copts)
 
     additional_objc_copts += [
@@ -916,7 +916,7 @@ def apple_library(name, library_tools = {}, export_private_headers = True, names
     module_data = library_tools["wrap_resources_in_filegroup"](name = name + "_wrapped_resources_filegroup", srcs = data, testonly = testonly)
 
     if swift_sources:
-        additional_swift_copts.extend(("-Xcc", "-I."))
+        additional_swift_copts.extend(("-Xcc", "-idirafter."))
         if module_map:
             # Frameworks find the modulemap file via the framework vfs overlay
             if not namespace_is_module_name:
@@ -1019,7 +1019,7 @@ def apple_library(name, library_tools = {}, export_private_headers = True, names
 
     # Note: this line is intentionally disabled
     if cpp_sources:
-        additional_cc_copts.append("-I.")
+        additional_cc_copts.append("-idirafter.")
         native.objc_library(
             name = cpp_libname,
             srcs = cpp_sources + objc_private_hdrs + objc_non_exported_hdrs,
@@ -1033,7 +1033,7 @@ def apple_library(name, library_tools = {}, export_private_headers = True, names
         )
         lib_names.append(cpp_libname)
 
-    additional_objc_copts.append("-I.")
+    additional_objc_copts.append("-idirafter.")
     index_while_building_objc_copts = select({
         "@build_bazel_rules_ios//:use_global_index_store": [
             # Note: this won't work work for remote caching yet. It uses a
