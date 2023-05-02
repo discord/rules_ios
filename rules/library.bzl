@@ -902,6 +902,7 @@ def apple_library(name, library_tools = {}, export_private_headers = True, names
     headermap(
         name = private_hmap_name,
         hdrs = [private_hdrs_filegroup],
+        hdr_dests = private_hdrs_dests,
         tags = _MANUAL,
     )
     private_dep_names.append(private_hmap_name)
@@ -909,6 +910,7 @@ def apple_library(name, library_tools = {}, export_private_headers = True, names
         name = private_angled_hmap_name,
         namespace = namespace,
         hdrs = [private_angled_hdrs_filegroup],
+        hdr_dests = private_angled_hdrs_dests,
         tags = _MANUAL,
     )
     private_dep_names.append(private_angled_hmap_name)

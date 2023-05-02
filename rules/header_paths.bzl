@@ -51,4 +51,5 @@ header_paths = struct(
     stringify_mapping = _stringify_mapping,
     get_mapped_path = _get_mapped_path,
     get_string_mapped_path = _get_string_mapped_path,
+    mapped_without_prefix = _mapped_without_prefix,
 )
