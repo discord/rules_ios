@@ -160,7 +160,6 @@ def _write_umbrella_header(
 """
 
     for header in public_headers:
-        # TODO: here needs to be correct path
         content += "#import \"{header}\"\n".format(header = header_paths.get_string_mapped_path(header, headers_mapping))
 
     if generate_default_umbrella_header:

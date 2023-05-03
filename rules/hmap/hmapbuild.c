@@ -118,7 +118,7 @@ static void parse_args(mapping **entries, char **av, int ac) {
             continue;
         }
         if(!*(av+1)) {
-          fprintf(stderr, "ERROR: header '%s' did not have a mapping as the next line\n", *av);
+          fprintf(stderr, "ERROR: header '%s' did not have a mapping as the next argument\n", *av);
         }
         add_header(entries, cli_args.name_space, *av, *(av+1));
     }

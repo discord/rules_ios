@@ -132,16 +132,16 @@ def _find_framework_dir(outputs):
     return None
 
 def _framework_packaging_symlink_headers(ctx, inputs, outputs, headers_mapping):
-    inputs_by_basename = {header_paths.get_mapped_path(input, headers_mapping): input for input in inputs}
+    inputs_by_mapped_name = {header_paths.get_mapped_path(input, headers_mapping): input for input in inputs}
 
     # If this check is true it means that multiple inputs have the same 'basename',
     # an additional check is done to see if that was caused by 'action_inputs' containing
     # two different paths to the same file
     #
     # In that case fails with a msg listing the differences found
-    if len(inputs_by_basename) != len(inputs):
-        inputs_by_basename_paths = [x.path for x in inputs_by_basename.values()]
-        inputs_with_duplicated_basename = [x for x in inputs if not x.path in inputs_by_basename_paths]
+    if len(inputs_by_mapped_name) != len(inputs):
+        inputs_by_mapped_name_paths = [x.path for x in inputs_by_mapped_name.values()]
+        inputs_with_duplicated_basename = [x for x in inputs if not x.path in inputs_by_mapped_name_paths]
         if len(inputs_with_duplicated_basename) > 0:
             # TODO: Fix this error message
             fail("""
@@ -150,15 +150,12 @@ def _framework_packaging_symlink_headers(ctx, inputs, outputs, headers_mapping):
                 {}
             """.format({
                     header_paths.get_mapped_path(x, headers_mapping):
-                    (x.path, inputs_by_basename[header_paths.get_mapped_path(x, headers_mapping)].path)
+                    (x.path, inputs_by_mapped_name[header_paths.get_mapped_path(x, headers_mapping)].path)
                 for x in inputs_with_duplicated_basename
             }))
 
     # If no error occurs create symlinks for each output with
     # each input as 'target_file'
-
-    # TODO: Verify that we don't actually have an issue where we can validly
-    #       len(inputs_by_basename) != len(inputs)
     for (input, output) in zip(inputs, outputs):
         ctx.actions.symlink(output = output, target_file = input)
 

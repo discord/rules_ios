@@ -55,7 +55,7 @@ def _make_headermap_impl(ctx):
 
     :return: provider with the info for this rule
     """
-    hdrs_lists = [[(s, d) for (s, d) in zip(ctx.files.hdrs, ctx.attr.hdr_dests)]]
+    hdrs_lists = [zip(ctx.files.hdrs, ctx.attr.hdr_dests)]
 
     for provider in ctx.attr.direct_hdr_providers:
         if apple_common.Objc in provider:
