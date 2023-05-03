@@ -29,6 +29,7 @@ load(
     "apple_resource_aspect",
 )
 load("//rules:force_load_direct_deps.bzl", "force_load_direct_deps")
+load("//rules:header_paths.bzl", "header_paths")
 
 _APPLE_FRAMEWORK_PACKAGING_KWARGS = [
     "visibility",
@@ -40,12 +41,16 @@ _APPLE_FRAMEWORK_PACKAGING_KWARGS = [
     "exported_symbols_lists",
 ]
 
-def apple_framework(name, apple_library = apple_library, **kwargs):
+
+def apple_framework(name, apple_library = apple_library, headers_mapping = {}, **kwargs):
     """Builds and packages an Apple framework.
 
     Args:
         name: The name of the framework.
         apple_library: The macro used to package sources into a library.
+        headers_mapping: A mapping of {str: str}, where the key is a path to a header,
+                         and the value where that header should be placed in Headers,
+                         PrivateHeaders, umbrella headers, hmaps, etc.
         **kwargs: Arguments passed to the apple_library and apple_framework_packaging rules as appropriate.
     """
     framework_packaging_kwargs = {arg: kwargs.pop(arg) for arg in _APPLE_FRAMEWORK_PACKAGING_KWARGS if arg in kwargs}
@@ -72,7 +77,7 @@ def apple_framework(name, apple_library = apple_library, **kwargs):
 
     testonly = kwargs.pop("testonly", False)
 
-    library = apple_library(name = name, testonly = testonly, **kwargs)
+    library = apple_library(name = name, testonly = testonly, headers_mapping = headers_mapping, **kwargs)
     framework_deps = []
 
     # Setup force loading here - only for direct deps / direct libs and when `link_dynamic` is set.
@@ -116,6 +121,7 @@ def apple_framework(name, apple_library = apple_library, **kwargs):
             "//conditions:default": "",
         }),
         testonly = testonly,
+        headers_mapping = headers_mapping,
         **framework_packaging_kwargs
     )
 
@@ -125,31 +131,35 @@ def _find_framework_dir(outputs):
         return prefix + ".framework"
     return None
 
-def _framework_packaging_symlink_headers(ctx, inputs, outputs):
-    inputs_by_basename = {input.basename: input for input in inputs}
+def _framework_packaging_symlink_headers(ctx, inputs, outputs, headers_mapping):
+    inputs_by_mapped_name = {header_paths.get_mapped_path(input, headers_mapping): input for input in inputs}
 
     # If this check is true it means that multiple inputs have the same 'basename',
     # an additional check is done to see if that was caused by 'action_inputs' containing
     # two different paths to the same file
     #
     # In that case fails with a msg listing the differences found
-    if len(inputs_by_basename) != len(inputs):
-        inputs_by_basename_paths = [x.path for x in inputs_by_basename.values()]
-        inputs_with_duplicated_basename = [x for x in inputs if not x.path in inputs_by_basename_paths]
+    if len(inputs_by_mapped_name) != len(inputs):
+        inputs_by_mapped_name_paths = [x.path for x in inputs_by_mapped_name.values()]
+        inputs_with_duplicated_basename = [x for x in inputs if not x.path in inputs_by_mapped_name_paths]
         if len(inputs_with_duplicated_basename) > 0:
+            # TODO: Fix this error message
             fail("""
                 [Error] Multiple files with the same name exists.\n
                 See below for the list of paths found for each basename:\n
                 {}
-            """.format({x.basename: (x.path, inputs_by_basename[x.basename].path) for x in inputs_with_duplicated_basename}))
+            """.format({
+                    header_paths.get_mapped_path(x, headers_mapping):
+                    (x.path, inputs_by_mapped_name[header_paths.get_mapped_path(x, headers_mapping)].path)
+                for x in inputs_with_duplicated_basename
+            }))
 
     # If no error occurs create symlinks for each output with
     # each input as 'target_file'
-    output_input_dict = {output: inputs_by_basename[output.basename] for output in outputs}
-    for (output, input) in output_input_dict.items():
+    for (input, output) in zip(inputs, outputs):
         ctx.actions.symlink(output = output, target_file = input)
 
-def _framework_packaging(ctx, action, inputs, outputs, manifest = None):
+def _framework_packaging(ctx, action, inputs, outputs, manifest = None, headers_mapping = {}):
     if not inputs:
         return []
     if inputs == [None]:
@@ -173,7 +183,7 @@ def _framework_packaging(ctx, action, inputs, outputs, manifest = None):
     args.add_all("--outputs", outputs)
 
     if action in ["header", "private_header"]:
-        _framework_packaging_symlink_headers(ctx, inputs, outputs)
+        _framework_packaging_symlink_headers(ctx, inputs, outputs, headers_mapping)
     else:
         ctx.actions.run(
             executable = ctx.executable._framework_packaging,
@@ -248,6 +258,7 @@ def _get_virtual_framework_info(ctx, framework_files, compilation_context_fields
 def _get_framework_files(ctx, deps):
     framework_name = ctx.attr.framework_name
     bundle_extension = ctx.attr.bundle_extension
+    headers_mapping = header_paths.stringify_mapping(ctx.attr.headers_mapping)
 
     # declare framework directory
     framework_dir = "%s/%s.%s" % (ctx.attr.name, framework_name, bundle_extension)
@@ -318,7 +329,8 @@ def _get_framework_files(ctx, deps):
         if PrivateHeadersInfo in dep:
             for hdr in dep[PrivateHeadersInfo].headers.to_list():
                 private_header_in.append(hdr)
-                destination = paths.join(framework_dir, "PrivateHeaders", hdr.basename)
+                mapped_path = header_paths.get_mapped_path(hdr, headers_mapping)
+                destination = paths.join(framework_dir, "PrivateHeaders", mapped_path)
                 private_header_out.append(destination)
 
         has_header = False
@@ -328,7 +340,8 @@ def _get_framework_files(ctx, deps):
                     if not hdr.is_directory and hdr.path.endswith((".h", ".hh", ".hpp")):
                         has_header = True
                         header_in.append(hdr)
-                        destination = paths.join(framework_dir, "Headers", hdr.basename)
+                        mapped_path = header_paths.get_mapped_path(hdr, headers_mapping)
+                        destination = paths.join(framework_dir, "Headers", mapped_path)
                         header_out.append(destination)
                     elif hdr.path.endswith(".modulemap"):
                         modulemap_in = hdr
@@ -378,18 +391,18 @@ def _get_framework_files(ctx, deps):
     # so inputs that do not depend on compilation
     # are available before those that do,
     # improving parallelism
-    binary_out = _framework_packaging(ctx, "binary", binary_in, binary_out, framework_manifest)
-    header_out = _framework_packaging(ctx, "header", header_in, header_out, framework_manifest)
-    private_header_out = _framework_packaging(ctx, "private_header", private_header_in, private_header_out, framework_manifest)
+    binary_out = _framework_packaging(ctx, "binary", binary_in, binary_out, framework_manifest, headers_mapping)
+    header_out = _framework_packaging(ctx, "header", header_in, header_out, framework_manifest, headers_mapping)
+    private_header_out = _framework_packaging(ctx, "private_header", private_header_in, private_header_out, framework_manifest, headers_mapping)
 
     # Instead of creating a symlink of the modulemap, we need to copy it to modulemap_out.
     # It's a hacky fix to guarantee running the clean action before compiling objc files depending on this framework in non-sandboxed mode.
     # Otherwise, stale header files under framework_root will cause compilation failure in non-sandboxed mode.
-    modulemap_out = _framework_packaging(ctx, "modulemap", [modulemap_in], modulemap_out, framework_manifest)
-    swiftmodule_out = _framework_packaging(ctx, "swiftmodule", [swiftmodule_in], swiftmodule_out, framework_manifest)
-    swiftinterface_out = _framework_packaging(ctx, "swiftinterface", [swiftinterface_in], swiftinterface_out, framework_manifest)
-    swiftdoc_out = _framework_packaging(ctx, "swiftdoc", [swiftdoc_in], swiftdoc_out, framework_manifest)
-    infoplist_out = _framework_packaging(ctx, "infoplist", [infoplist_in], infoplist_out, framework_manifest)
+    modulemap_out = _framework_packaging(ctx, "modulemap", [modulemap_in], modulemap_out, framework_manifest, headers_mapping)
+    swiftmodule_out = _framework_packaging(ctx, "swiftmodule", [swiftmodule_in], swiftmodule_out, framework_manifest, headers_mapping)
+    swiftinterface_out = _framework_packaging(ctx, "swiftinterface", [swiftinterface_in], swiftinterface_out, framework_manifest, headers_mapping)
+    swiftdoc_out = _framework_packaging(ctx, "swiftdoc", [swiftdoc_in], swiftdoc_out, framework_manifest, headers_mapping)
+    infoplist_out = _framework_packaging(ctx, "infoplist", [infoplist_in], infoplist_out, framework_manifest, headers_mapping)
 
     outputs = struct(
         binary = binary_out,
@@ -1126,6 +1139,7 @@ The C++ toolchain from which linking flags and other tools needed by the Swift
 toolchain (such as `clang`) will be retrieved.
 """,
         ),
+        "headers_mapping": attr.label_keyed_string_dict(allow_files=True),
     },
     doc = "Packages compiled code into an Apple .framework package",
 )
