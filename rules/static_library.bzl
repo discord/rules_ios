@@ -9,6 +9,7 @@ def apple_static_library(
         deps = [],
         visibility = [],
         testonly = False,
+        system_module = True,
         **kwargs):
 
     """
@@ -118,6 +119,7 @@ def apple_static_library(
         _headers_symlinks(
             name = public_headers_symlinks_name,
             hdrs = public_headers_to_name,
+            system_module = system_module,
             visibility = visibility,
         )
         extra_deps.append(public_headers_symlinks_name)
@@ -128,6 +130,7 @@ def apple_static_library(
         visibility=visibility,
         testonly=testonly,
         deps = deps + extra_deps,
+        system_module = system_module,
         **kwargs
     )
 
@@ -154,14 +157,23 @@ def _headers_symlinks_impl(ctx):
         ctx.actions.symlink(output = output, target_file = hdr.files.to_list()[0])
 
     output_depset = depset(outputs)
-    return [
-        DefaultInfo(files = output_depset),
-        CcInfo(compilation_context = cc_common.create_compilation_context(
+    if ctx.attr.system_module:
+        compilation_context = cc_common.create_compilation_context(
+            headers = output_depset,
+            system_includes = depset([
+                public_headers_dir,
+            ]),
+        )
+    else:
+        compilation_context = cc_common.create_compilation_context(
             headers = output_depset,
             includes = depset([
                 public_headers_dir,
             ]),
-        )),
+        )
+    return [
+        DefaultInfo(files = output_depset),
+        CcInfo(compilation_context = compilation_context),
         apple_common.new_objc_provider(),
     ]
 
@@ -172,6 +184,10 @@ _headers_symlinks = rule(
         "hdrs": attr.label_keyed_string_dict(
             allow_files = True,
             doc = "Mapping of source file paths to relative path where the file should life in the link tree"
+        ),
+        "system_module": attr.bool(
+            default = True,
+            doc = "Whether the symlink headers dir should be exported as a system_include"
         ),
     },
 )

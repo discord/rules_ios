@@ -576,6 +576,7 @@ def apple_library(name, library_tools = {}, export_private_headers = True, names
     defines = kwargs.pop("defines", [])
     testonly = kwargs.pop("testonly", False)
     features = kwargs.pop("features", [])
+    system_module = kwargs.pop("system_module", True)
 
     for (k, v) in {"momc_copts": momc_copts, "mapc_copts": mapc_copts, "ibtool_copts": ibtool_copts}.items():
         if v:
@@ -816,6 +817,7 @@ def apple_library(name, library_tools = {}, export_private_headers = True, names
                 private_headers = objc_private_hdrs,
                 module_name = module_name,
                 framework = True,
+                system_module = system_module,
                 **kwargs
             )
 
