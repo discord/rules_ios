@@ -6,6 +6,7 @@ def apple_static_library(
         apple_library = apple_library,
         public_headers = [],
         public_headers_to_name = {},
+        deps = [],
         visibility = [],
         testonly = False,
         **kwargs):
@@ -107,18 +108,6 @@ def apple_static_library(
         ```
     """
 
-    public_headers = public_headers
-
-    library = apple_library(
-        name = name,
-        public_headers = public_headers,
-        visibility=visibility,
-        testonly=testonly,
-        **kwargs
-    )
-
-    platforms = library.platforms if library.platforms else {}
-
     extra_deps = []
 
     # TODO(nmj): We'll likely need to add a way to set up a private headers link tree
@@ -133,9 +122,18 @@ def apple_static_library(
         )
         extra_deps.append(public_headers_symlinks_name)
 
+    library = apple_library(
+        name = name,
+        public_headers = public_headers,
+        visibility=visibility,
+        testonly=testonly,
+        deps = deps + extra_deps,
+        **kwargs
+    )
+
     native.objc_library(
         name = name,
-        deps = library.deps + extra_deps,
+        deps = library.deps,
         data = [library.data] if library.data else [],
         linkopts = library.linkopts,
         testonly = kwargs.get("testonly", False),

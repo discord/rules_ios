@@ -100,13 +100,14 @@ extend_modulemap = rule(
     doc = "Extends a modulemap with a Swift submodule",
 )
 
-def _write_modulemap(name, library_tools, umbrella_header = None, public_headers = [], private_headers = [], module_name = None, framework = False, **kwargs):
+def _write_modulemap(name, library_tools, umbrella_header = None, public_headers = [], private_headers = [], module_name = None, framework = False, system_module = True, **kwargs):
     basename = "{}.modulemap".format(name)
     destination = paths.join(name + "-modulemap", basename)
+    system_module_text = "[system] " if system_module else ""
     if not module_name:
         module_name = name
     content = """\
-module {module_name} {{
+module {module_name} {system_module_text} {{
     umbrella header "{umbrella_header}"
 
     export *
@@ -115,6 +116,7 @@ module {module_name} {{
 """.format(
         module_name = module_name,
         umbrella_header = umbrella_header,
+        system_module_text = system_module_text,
     )
     if framework:
         content = "framework " + content
