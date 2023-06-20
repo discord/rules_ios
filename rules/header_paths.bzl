@@ -47,9 +47,18 @@ def _mapped_without_prefix(files, prefix):
             fail("File `{}` does not start with prefix `{}`".format(file, prefix))
     return ret
 
+def _identity_mapping(files):
+    """
+    Creates a mapping of a string path onto that same string path.
+
+    Useful for mapping headers to their original path in the source tree.
+    """
+    return {f: f for f in files}
+
 header_paths = struct(
-    stringify_mapping = _stringify_mapping,
     get_mapped_path = _get_mapped_path,
     get_string_mapped_path = _get_string_mapped_path,
+    identity_mapping = _identity_mapping,
     mapped_without_prefix = _mapped_without_prefix,
+    stringify_mapping = _stringify_mapping,
 )
