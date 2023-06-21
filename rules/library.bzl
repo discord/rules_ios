@@ -134,9 +134,11 @@ def _write_umbrella_header(
         generate_default_umbrella_header,
         public_headers = [],
         module_name = None,
-        headers_mapping = {}):
+        headers_mapping = {},
+        objc_public_headers = None):
     basename = "{name}-umbrella.h".format(name = name)
     destination = paths.join(name + "-modulemap", basename)
+
     if not module_name:
         module_name = name
 
@@ -161,16 +163,27 @@ def _write_umbrella_header(
 
 """
 
-    for header in public_headers:
-        content += "#import \"{header}\"\n".format(header = header_paths.get_string_mapped_path(header, headers_mapping))
+    if objc_public_headers != None:
+        content += "#if defined(__cplusplus)\n"
+
+        for header in public_headers:
+            content += "#import \"{header}\"\n".format(header = header_paths.get_string_mapped_path(header, headers_mapping))
+
+        content += "#else\n"
+
+        for header in objc_public_headers:
+            content += "#import \"{header}\"\n".format(header = header_paths.get_string_mapped_path(header, headers_mapping))
+
+        content += "#endif"
+    else:
+        for header in public_headers:
+            content += "#import \"{header}\"\n".format(header = header_paths.get_string_mapped_path(header, headers_mapping))
 
     if generate_default_umbrella_header:
         content += """
 FOUNDATION_EXPORT double {module_name}VersionNumber;
 FOUNDATION_EXPORT const unsigned char {module_name}VersionString[];
-""".format(
-            module_name = module_name,
-        )
+""".format(module_name = module_name)
 
     write_file(
         name = basename + "~",
@@ -452,7 +465,19 @@ def _find_imported_xcframework_name(outputs):
         return fw_name
     return None
 
-def apple_library(name, library_tools = {}, export_private_headers = True, namespace_is_module_name = True, default_xcconfig_name = None, xcconfig = {}, xcconfig_by_build_setting = {}, objc_defines = [], swift_defines = [], headers_mapping = {}, **kwargs):
+def apple_library(
+        name,
+        library_tools = {},
+        export_private_headers = True,
+        namespace_is_module_name = True,
+        default_xcconfig_name = None,
+        xcconfig = {},
+        xcconfig_by_build_setting = {},
+        objc_defines = [],
+        swift_defines = [],
+        headers_mapping = {},
+        objc_public_headers = None,
+        **kwargs):
     """Create libraries for native source code on Apple platforms.
 
     Automatically handles mixed-source libraries and comes with
@@ -478,6 +503,10 @@ def apple_library(name, library_tools = {}, export_private_headers = True, names
         headers_mapping: A mapping of {str: str}, where the key is a path to a header,
                          and the value where that header should be placed in hmaps,
                          umbrella headers, etc.
+        objc_public_headers: If not `None`, then a list of headers from `public_headers`
+                             that are safe for objective c to consume. Anything other
+                             headers in `public_headers` will be gated in the umbrella
+                             header on the __cplusplus macro
         **kwargs: keyword arguments.
 
     Returns:
@@ -806,6 +835,7 @@ def apple_library(name, library_tools = {}, export_private_headers = True, names
                 public_headers = objc_hdrs,
                 module_name = module_name,
                 headers_mapping = headers_mapping,
+                objc_public_headers = objc_public_headers,
             )
             if umbrella_header:
                 objc_hdrs.append(umbrella_header)
