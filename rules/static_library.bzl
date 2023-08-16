@@ -116,7 +116,7 @@ def apple_static_library(
     #            that some Pods do.
     if public_headers_to_name:
         public_headers_symlinks_name = "{}_public_headers_symlinks".format(name)
-        _headers_symlinks(
+        _cc_headers_symlinks(
             name = public_headers_symlinks_name,
             hdrs = public_headers_to_name,
             system_module = system_module,
@@ -143,7 +143,7 @@ def apple_static_library(
         visibility = visibility,
     )
 
-def _headers_symlinks_impl(ctx):
+def _cc_headers_symlinks_impl(ctx):
     if not ctx.attr.hdrs:
         return []
 
@@ -177,9 +177,13 @@ def _headers_symlinks_impl(ctx):
         apple_common.new_objc_provider(),
     ]
 
-_headers_symlinks = rule(
-    implementation = _headers_symlinks_impl,
-    doc = "Rule that actually creates symlink trees for header remapping",
+cc_headers_symlinks = rule(
+    implementation = _cc_headers_symlinks_impl,
+    doc = (
+        "Rule that actually creates symlink trees for header remapping. " +
+        "Exports them with -I or -isystem and can be taken as a dep in " +
+        "rules that handle CcInfo"
+    ),
     attrs = {
         "hdrs": attr.label_keyed_string_dict(
             allow_files = True,
