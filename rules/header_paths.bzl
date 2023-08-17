@@ -102,6 +102,19 @@ def _add_prefix(prefix, attrs=("srcs", "private_headers", "public_headers")):
     """
     return struct(pattern = prefix, attrs = attrs, op = "add")
 
+def _identity_mapping(attrs=("srcs", "private_headers", "public_headers")):
+    """
+    Create a mapping that ensures that paths are not changed
+
+    Normally apple_framework moves all headers to a Headers/PrivateHeaders directory,
+    and often we just to make sure the files stay put in those directories with the
+    full on-filesystem layout.
+
+    This replaces doing something like `{h: h for h in HEADERS}`
+    """
+    return struct(pattern = "", attrs = attrs, op = "strip")
+
+
 header_paths = struct(
     stringify_mapping = _stringify_mapping,
     get_mapped_path = _get_mapped_path,
@@ -110,4 +123,5 @@ header_paths = struct(
     glob_and_strip_prefix = _glob_and_strip_prefix,
     add_prefix = _add_prefix,
     strip_prefix = _strip_prefix,
+    identity_mapping = _identity_mapping,
 )
