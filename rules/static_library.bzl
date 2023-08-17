@@ -116,7 +116,7 @@ def apple_static_library(
     #            that some Pods do.
     if public_headers_to_name:
         public_headers_symlinks_name = "{}_public_headers_symlinks".format(name)
-        _cc_headers_symlinks(
+        cc_headers_symlinks(
             name = public_headers_symlinks_name,
             hdrs = public_headers_to_name,
             system_module = system_module,
