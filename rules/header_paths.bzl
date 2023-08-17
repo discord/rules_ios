@@ -84,10 +84,30 @@ def _glob_and_strip_prefix(src_dirs, suffix = ".h"):
             ret[file] = file[to_strip:]
     return ret
 
+def _strip_prefix(prefix, attrs=("srcs", "private_headers", "public_headers"))
+    """
+    When remapping headers, strip the given prefix from the destination for all headers
+    in the specified attrs.
+
+    Only supported as the headers_mapping attribute in apple_framework
+    """
+    return struct(pattern = prefix, attrs = attrs, op = "strip")
+
+def _add_prefix(prefix, attrs=("srcs", "private_headers", "public_headers")):
+    """
+    When remapping headers, add the given prefix to the destination for all headers
+    in the specified attrs.
+
+    Only supported as the headers_mapping attribute in apple_framework
+    """
+    return struct(pattern = prefix, attrs = attrs, op = "add")
+
 header_paths = struct(
     stringify_mapping = _stringify_mapping,
     get_mapped_path = _get_mapped_path,
     get_string_mapped_path = _get_string_mapped_path,
     mapped_without_prefix = _mapped_without_prefix,
     glob_and_strip_prefix = _glob_and_strip_prefix,
+    add_prefix = _add_prefix,
+    strip_prefix = _strip_prefix,
 )
