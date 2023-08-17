@@ -68,7 +68,7 @@ def _glob_and_strip_prefix(src_dirs, suffix = ".h"):
         ...
         # Matched from src_dir = "react/renderer/imagemanager/platform/ios/react"
         #   glob "react/renderer/imagemanager/platform/ios/react/**/*.h"
-        "react/renderer/imagemanager/platform/ios/react/renderer/imagemanager/RCTImageManager.h": "react/renderer/iamgemanager/RCTImageManager.h",
+        "react/renderer/imagemanager/platform/ios/react/renderer/imagemanager/RCTImageManager.h": "react/renderer/imagemanager/RCTImageManager.h",
         ...
     }
 
