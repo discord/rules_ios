@@ -54,7 +54,7 @@ def _generate_headers_mapping(headers_mapping, kwargs):
         return headers_mapping
 
     to_map = []
-    for attr in headers_mapping.which:
+    for attr in headers_mapping.attrs:
         exts = _HEADER_EXTS[attr]
         to_map += [h for h in kwargs.get(attr, []) if h.endswith(exts)]
 
