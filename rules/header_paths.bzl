@@ -84,7 +84,7 @@ def _glob_and_strip_prefix(src_dirs, suffix = ".h"):
             ret[file] = file[to_strip:]
     return ret
 
-def _strip_prefix(prefix, attrs=("srcs", "private_headers", "public_headers"))
+def _strip_prefix(prefix, attrs=("srcs", "private_headers", "public_headers")):
     """
     When remapping headers, strip the given prefix from the destination for all headers
     in the specified attrs.
