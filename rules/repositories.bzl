@@ -66,6 +66,10 @@ def rules_ios_dependencies():
         project = "bazelbuild",
         repo = "rules_apple",
         sha256 = "5e82a98a591efda772a5ee96ed17bcad38338aafeba6055daab04a5d6c13ea50",
+        patches = [
+            "@build_bazel_rules_ios//:patches/build_bazel_rules_apple.patch",
+        ],
+        patch_args = ["-p1"],
     )
 
     _maybe(
