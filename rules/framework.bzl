@@ -7,8 +7,10 @@ load("//rules:plists.bzl", "process_infoplists")
 load("//rules:providers.bzl", "AvoidDepsInfo", "FrameworkInfo")
 load("//rules:transition_support.bzl", "transition_support")
 load("//rules/internal:objc_provider_utils.bzl", "objc_provider_utils")
+load("@bazel_skylib//lib:collections.bzl", "collections")
 load("@bazel_skylib//lib:partial.bzl", "partial")
 load("@bazel_skylib//lib:paths.bzl", "paths")
+load("@bazel_skylib//lib:types.bzl", "types")
 load("@build_bazel_rules_apple//apple/internal:apple_product_type.bzl", "apple_product_type")
 load("@build_bazel_rules_apple//apple/internal:bundling_support.bzl", "bundling_support")
 load("@build_bazel_rules_apple//apple/internal:features_support.bzl", "features_support")
@@ -41,6 +43,29 @@ _APPLE_FRAMEWORK_PACKAGING_KWARGS = [
     "exported_symbols_lists",
 ]
 
+_HEADER_EXTS = {
+    "srcs": (".h", ".hh", ".hpp"),
+    "public_headers": (".inc", ".h", ".hh", ".hpp"),
+    "private_headers": (".inc", ".h", ".hh", ".hpp"),
+}
+
+def _generate_headers_mapping(headers_mapping, kwargs):
+    if types.is_dict(headers_mapping):
+        return headers_mapping
+
+    to_map = []
+    for attr in headers_mapping.attrs:
+        exts = _HEADER_EXTS[attr]
+        to_map += [h for h in kwargs.get(attr, []) if h.endswith(exts)]
+
+    headers = collections.uniq(to_map)
+    if headers_mapping.op == "strip":
+        return header_paths.mapped_without_prefix(headers, headers_mapping.pattern)
+    elif headers_mapping.op == "add":
+        return {h: headers_mapping.pattern + h for h in headers}
+    else:
+        fail("Invalid headers_mapping `{}`".format(headers_mapping))
+
 
 def apple_framework(name, apple_library = apple_library, headers_mapping = {}, **kwargs):
     """Builds and packages an Apple framework.
@@ -48,9 +73,18 @@ def apple_framework(name, apple_library = apple_library, headers_mapping = {}, *
     Args:
         name: The name of the framework.
         apple_library: The macro used to package sources into a library.
-        headers_mapping: A mapping of {str: str}, where the key is a path to a header,
-                         and the value where that header should be placed in Headers,
-                         PrivateHeaders, umbrella headers, hmaps, etc.
+        headers_mapping: Either a dictionary, or the value from add_prefix / strip_prefix.
+
+                         If a dictionary, a mapping of {str: str}, where the key is a
+                         path to a header, and the value where that header should be
+                         placed in Headers, PrivateHeaders, umbrella headers, hmaps, etc.
+
+                         If the result of header_paths.add_prefix, then the attributes
+                         specified will have the prefix appended to the beginning.
+
+                         If the result of header_paths.strip_prefix, then the
+                         attributes specified will have the prefix reoved from the
+                         beginning.
         **kwargs: Arguments passed to the apple_library and apple_framework_packaging rules as appropriate.
     """
     framework_packaging_kwargs = {arg: kwargs.pop(arg) for arg in _APPLE_FRAMEWORK_PACKAGING_KWARGS if arg in kwargs}
@@ -76,6 +110,9 @@ def apple_framework(name, apple_library = apple_library, headers_mapping = {}, *
     }))
 
     testonly = kwargs.pop("testonly", False)
+
+    if headers_mapping:
+        headers_mapping = _generate_headers_mapping(headers_mapping, kwargs)
 
     library = apple_library(name = name, testonly = testonly, headers_mapping = headers_mapping, **kwargs)
     framework_deps = []
