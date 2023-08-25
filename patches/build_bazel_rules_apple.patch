@@ -1,0 +1,30 @@
+diff -ur a/tools/plisttool/plisttool.py b/tools/plisttool/plisttool.py
+--- a/tools/plisttool/plisttool.py	2023-08-23 00:50:38
++++ b/tools/plisttool/plisttool.py	2023-08-23 00:50:30
+@@ -294,15 +294,26 @@
+ 
+ _ENTITLEMENTS_TO_VALIDATE_WITH_PROFILE = (
+     'aps-environment',
++    'com.apple.developer.applesignin',
++    'com.apple.developer.carplay-audio',
++    'com.apple.developer.carplay-charging',
++    'com.apple.developer.carplay-maps',
++    'com.apple.developer.carplay-messaging',
++    'com.apple.developer.carplay-parking',
++    'com.apple.developer.carplay-quick-ordering',
++    'com.apple.developer.playable-content',
+     'com.apple.developer.networking.wifi-info',
+     'com.apple.developer.passkit.pass-presentation-suppression',
+     'com.apple.developer.payment-pass-provisioning',
++    'com.apple.developer.proximity-reader.payment.acceptance',
+     'com.apple.developer.siri',
+     'com.apple.developer.usernotifications.critical-alerts',
+     'com.apple.developer.usernotifications.time-sensitive',
+     # Keys which have a list of potential values in the profile, but only one in
+     # the entitlements that must be in the profile's list of values
+     'com.apple.developer.devicecheck.appattest-environment',
++    'com.apple.storekit.request-data',
++    'com.apple.developer.storekit.request-data',
+ )
+ 
+ ENTITLEMENTS_BETA_REPORTS_ACTIVE_MISMATCH = (
