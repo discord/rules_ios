@@ -37,6 +37,7 @@ load("//rules:header_paths.bzl", "header_paths")
 
 _APPLE_FRAMEWORK_PACKAGING_KWARGS = [
     "visibility",
+    "features",
     "frameworks",
     "tags",
     "bundle_id",
