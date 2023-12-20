@@ -68,6 +68,7 @@ def rules_ios_dependencies():
         sha256 = "5e82a98a591efda772a5ee96ed17bcad38338aafeba6055daab04a5d6c13ea50",
         patches = [
             "@build_bazel_rules_ios//:patches/build_bazel_rules_apple.patch",
+            "@build_bazel_rules_ios//:patches/build_bazel_rules_apple_filesystem.patch",
         ],
         patch_args = ["-p1"],
     )
