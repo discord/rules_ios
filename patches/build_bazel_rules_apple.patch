@@ -1,7 +1,20 @@
-diff -ur a/tools/plisttool/plisttool.py b/tools/plisttool/plisttool.py
---- a/tools/plisttool/plisttool.py	2023-08-23 00:50:38
-+++ b/tools/plisttool/plisttool.py	2023-08-23 00:50:30
-@@ -294,15 +294,26 @@
+diff --git a/apple/internal/ios_rules.bzl b/apple/internal/ios_rules.bzl
+index 9b0d1270..73dfb375 100644
+--- a/apple/internal/ios_rules.bzl
++++ b/apple/internal/ios_rules.bzl
+@@ -927,6 +927,7 @@ def _ios_extension_impl(ctx):
+         attr = ctx.attr,
+         res_attrs = [
+             "app_icons",
++            "resources",
+             "strings",
+         ],
+     )
+diff --git a/tools/plisttool/plisttool.py b/tools/plisttool/plisttool.py
+index ecc84f28..2cd295cc 100644
+--- a/tools/plisttool/plisttool.py
++++ b/tools/plisttool/plisttool.py
+@@ -294,15 +294,26 @@ ENTITLEMENTS_VALUE_NOT_IN_LIST = (
  
  _ENTITLEMENTS_TO_VALIDATE_WITH_PROFILE = (
      'aps-environment',
