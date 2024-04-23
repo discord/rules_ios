@@ -174,7 +174,6 @@ def _cc_headers_symlinks_impl(ctx):
     return [
         DefaultInfo(files = output_depset),
         CcInfo(compilation_context = compilation_context),
-        apple_common.new_objc_provider(),
     ]
 
 cc_headers_symlinks = rule(
