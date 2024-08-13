@@ -995,6 +995,11 @@ def apple_library(
         generated_swift_header_name = module_name + "-Swift.h"
 
         if module_map:
+            # NOTE(nmj): Need to make sure that both the extended and the regular
+            #            modulemap are included as inputs, otherwise swiftc compilation
+            #            will fail.
+            swiftc_inputs.append(module_map)
+
             extend_modulemap(
                 name = module_map + ".extended." + name,
                 destination = "%s.extended.modulemap" % name,
