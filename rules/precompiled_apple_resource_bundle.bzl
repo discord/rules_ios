@@ -6,18 +6,19 @@ https://github.com/bazelbuild/rules_apple/issues/319
 if this is ever fixed in bazel it should be removed
 """
 
+load("@bazel_skylib//lib:dicts.bzl", "dicts")
 load("@bazel_skylib//lib:partial.bzl", "partial")
 load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@build_bazel_apple_support//lib:apple_support.bzl", "apple_support")
+load("@build_bazel_rules_apple//apple/internal:providers.bzl", "new_appleresourcebundleinfo", "new_appleresourceinfo")
 load("@build_bazel_rules_apple//apple/internal:apple_product_type.bzl", "apple_product_type")
 load("@build_bazel_rules_apple//apple/internal:intermediates.bzl", "intermediates")
 load("@build_bazel_rules_apple//apple/internal:partials.bzl", "partials")
 load("@build_bazel_rules_apple//apple/internal:platform_support.bzl", "platform_support")
 load("@build_bazel_rules_apple//apple/internal:resources.bzl", "resources")
 load("@build_bazel_rules_apple//apple/internal:resource_actions.bzl", "resource_actions")
-load("@build_bazel_rules_apple//apple/internal:rule_factory.bzl", "rule_factory")
+load("@build_bazel_rules_apple//apple/internal:rule_attrs.bzl", "rule_attrs")
 load("@build_bazel_rules_apple//apple/internal:apple_toolchains.bzl", "AppleMacToolsToolchainInfo")
-load("@build_bazel_rules_apple//apple:providers.bzl", "AppleResourceBundleInfo", "AppleResourceInfo")
 load("//rules:transition_support.bzl", "transition_support")
 load("//rules:utils.bzl", "bundle_identifier_for_bundle")
 
@@ -33,23 +34,6 @@ def _precompiled_apple_resource_bundle_impl(ctx):
     current_apple_platform = transition_support.current_apple_platform(apple_fragment = ctx.fragments.apple, xcode_config = ctx.attr._xcode_config)
     platform_type = str(current_apple_platform.platform.platform_type)
 
-    # The label of this fake_ctx is used as the swift module associated with storyboards, nibs, xibs
-    # and CoreData models.
-    # * For storyboards, nibs and xibs: https://github.com/bazelbuild/rules_apple/blob/master/apple/internal/partials/support/resources_support.bzl#L446
-    # * For CoreData models: https://github.com/bazelbuild/rules_apple/blob/master/apple/internal/partials/support/resources_support.bzl#L57
-    #
-    # Such swift module is required in the following cases:
-    # 1- When the storyboard, nib or xib contains the value <customModuleProvider="target">.
-    # 2- When the CoreData model sets "Current Product Module" for its Module property.
-    # If none of above scenarios, the swift module is not important and could be any arbitrary string.
-    # For the full context see https://github.com/bazel-ios/rules_ios/issues/113
-    #
-    # Usage:
-    # The most common scenario happens when the bundle name is the same as the corresponding swift module.
-    # If that is not the case, it is possible to customize the swift module by explicitly
-    # passing a swift_module attr
-    fake_rule_label = Label("//fake_package:" + (ctx.attr.swift_module or bundle_name))
-
     platform_prerequisites = platform_support.platform_prerequisites(
         apple_fragment = ctx.fragments.apple,
         config_vars = ctx.var,
@@ -60,8 +44,8 @@ def _precompiled_apple_resource_bundle_impl(ctx):
         platform_type_string = platform_type,
         uses_swift = False,
         xcode_version_config = ctx.attr._xcode_config[apple_common.XcodeVersionConfig],
-        disabled_features = [],
         features = [],
+        build_settings = None,
     )
     partials_args = dict(
         actions = ctx.actions,
@@ -77,11 +61,13 @@ def _precompiled_apple_resource_bundle_impl(ctx):
             binary_infoplist = None,
             product_type = _FAKE_BUNDLE_PRODUCT_TYPE_BY_PLATFORM_TYPE.get(platform_type, ctx.attr._product_type),
         ),
-        rule_label = fake_rule_label,
+        rule_label = ctx.label,
+        swift_module = ctx.attr.swift_module or bundle_name,
         version = None,
+        include_executable_name = False,
     )
 
-    apple_mac_toolchain_info = ctx.attr._toolchain[AppleMacToolsToolchainInfo]
+    apple_mac_toolchain_info = ctx.attr._mac_toolchain[AppleMacToolsToolchainInfo]
     partial_output = partial.call(
         partials.resources_partial(
             apple_mac_toolchain_info = apple_mac_toolchain_info,
@@ -105,13 +91,15 @@ def _precompiled_apple_resource_bundle_impl(ctx):
         paths.join("%s-intermediates" % ctx.label.name, "Info.plist"),
     )
 
+    # No need to pass swift_module to merge_root_infoplists
+    partials_args.pop("swift_module")
     resource_actions.merge_root_infoplists(
         bundle_id = ctx.attr.bundle_id or bundle_identifier_for_bundle(bundle_name),
         input_plists = ctx.files.infoplists,
         output_pkginfo = None,
         output_plist = output_plist,
-        output_discriminator = None,
-        resolved_plisttool = apple_mac_toolchain_info.resolved_plisttool,
+        output_discriminator = "bundle",
+        plisttool = apple_mac_toolchain_info.plisttool,
         **partials_args
     )
 
@@ -121,7 +109,7 @@ def _precompiled_apple_resource_bundle_impl(ctx):
     control_files = []
     input_files = []
     output_files = []
-    output_bundle_dir = ctx.actions.declare_directory(paths.join(ctx.attr.name, bundle_name + ".bundle"))
+    output_bundle_dir = ctx.actions.declare_directory(paths.join(ctx.attr.name, bundle_name + ctx.attr.bundle_extension))
 
     # Need getattr since the partial_ouput struct will be empty when there are no resources.
     # Even so, we want to generate a resource bundle for compatibility.
@@ -176,28 +164,25 @@ def _precompiled_apple_resource_bundle_impl(ctx):
     )
     ctx.actions.write(
         output = bundletool_instructions_file,
-        content = bundletool_instructions.to_json(),
+        content = json.encode(bundletool_instructions),
     )
-    resolved_bundletool_experimental = apple_mac_toolchain_info.resolved_bundletool_experimental
+    bundletool_experimental = apple_mac_toolchain_info.bundletool_experimental
 
     apple_support.run(
         actions = ctx.actions,
         apple_fragment = platform_prerequisites.apple_fragment,
-        executable = resolved_bundletool_experimental.executable,
+        executable = bundletool_experimental,
         execution_requirements = {},
-        inputs = depset(resolved_bundletool_experimental.inputs.to_list() + input_files + [bundletool_instructions_file], transitive = [
-            resolved_bundletool_experimental.inputs,
-        ]),
-        input_manifests = resolved_bundletool_experimental.input_manifests,
+        inputs = depset(input_files + [bundletool_instructions_file]),
         mnemonic = "BundleResources",
-        tools = [apple_mac_toolchain_info.resolved_bundletool_experimental.executable],
+        tools = [apple_mac_toolchain_info.bundletool_experimental.executable],
         xcode_config = platform_prerequisites.xcode_version_config,
         arguments = [bundletool_instructions_file.path],
         outputs = [output_bundle_dir],
     )
 
     return [
-        AppleResourceInfo(
+        new_appleresourceinfo(
             unowned_resources = depset(),
             owners = depset([
                 (output_bundle_dir.short_path, ctx.label),
@@ -215,7 +200,7 @@ def _precompiled_apple_resource_bundle_impl(ctx):
                 (output_bundle_dir.basename, None, depset([output_bundle_dir, output_plist])),
             ],
         ),
-        AppleResourceBundleInfo(),
+        new_appleresourcebundleinfo(),
         apple_common.new_objc_provider(),
         CcInfo(),
     ]
@@ -224,9 +209,7 @@ _precompiled_apple_resource_bundle = rule(
     implementation = _precompiled_apple_resource_bundle_impl,
     fragments = ["apple"],
     cfg = transition_support.apple_rule_transition,
-    attrs = dict(
-        # This includes all the undocumented tool requirements for this rule
-        rule_factory.common_tool_attributes,
+    attrs = dicts.add(rule_attrs.common_tool_attrs(), dict(
         infoplists = attr.label_list(
             allow_files = [".plist"],
             default = [
@@ -252,7 +235,7 @@ _precompiled_apple_resource_bundle = rule(
         ),
         bundle_extension = attr.string(
             mandatory = False,
-            default = "bundle",
+            default = ".bundle",
             doc = "The extension of the resource bundle.",
         ),
         platforms = attr.string_dict(
@@ -283,11 +266,12 @@ the bundle as a dependency.""",
             default = "@bazel_tools//tools/allowlists/function_transition_allowlist",
             doc = "Needed to allow this rule to have an incoming edge configuration transition.",
         ),
-        _toolchain = attr.label(
+        _mac_toolchain = attr.label(
             default = Label("@build_bazel_rules_apple//apple/internal:mac_tools_toolchain"),
             providers = [[AppleMacToolsToolchainInfo]],
+            cfg = "exec",
         ),
-    ),
+    )),
 )
 
 def precompiled_apple_resource_bundle(**kwargs):

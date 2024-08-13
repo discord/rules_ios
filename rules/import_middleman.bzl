@@ -1,6 +1,8 @@
-load("@build_bazel_rules_apple//apple:providers.bzl", "AppleFrameworkImportInfo")
-load("//rules:features.bzl", "feature_names")
 load("//rules/internal:objc_provider_utils.bzl", "objc_provider_utils")
+load("//rules:utils.bzl", "is_bazel_7")
+load("@bazel_tools//tools/cpp:toolchain_utils.bzl", "find_cpp_toolchain", "use_cpp_toolchain")
+load("@build_bazel_rules_apple//apple/internal:bundling_support.bzl", "bundling_support")
+load("@build_bazel_rules_apple//apple/internal:providers.bzl", "AppleFrameworkImportInfo", "new_appleframeworkimportinfo")
 
 _FindImportsAspectInfo = provider(fields = {
     "imported_library_file": "",
@@ -12,23 +14,23 @@ _FindImportsAspectInfo = provider(fields = {
 def _update_framework(ctx, framework):
     # Updates the `framework` for Apple Silicon
     out_file = ctx.actions.declare_file(ctx.attr.name + "/" + framework.basename + ".framework" + "/" + framework.basename)
-    out_dir = ctx.actions.declare_file(ctx.attr.name + "/" + framework.basename + ".framework")
     cmd = """
      set -e
      TOOL="{}"
-     FRAMEWORK_BINARY="{}"
-     OUT_DIR="{}"
-     FW_DIR="$(dirname "$FRAMEWORK_BINARY")"
+     INPUT_FRAMEWORK_BINARY="{}"
+     OUTPUT_FRAMEWORK_BINARY="{}"
+     INPUT_FW_DIR="$(dirname "$INPUT_FRAMEWORK_BINARY")"
+     OUTPUT_FW_DIR="$(dirname "$OUTPUT_FRAMEWORK_BINARY")"
 
      # Duplicate the _entire_ input framework
-     mkdir -p "$(dirname "$OUT_DIR")"
+     mkdir -p "$OUTPUT_FW_DIR"
 
-     ditto "$FW_DIR" "$OUT_DIR"
-     "$TOOL" "$OUT_DIR/$(basename "$FRAMEWORK_BINARY")"
-   """.format(ctx.files.update_in_place[0].path, framework.path, out_dir.path)
+     ditto "$INPUT_FW_DIR" "$OUTPUT_FW_DIR"
+     "$TOOL" "$OUTPUT_FW_DIR/$(basename "$INPUT_FRAMEWORK_BINARY")"
+   """.format(ctx.files.update_in_place[0].path, framework.path, out_file.path)
 
     ctx.actions.run_shell(
-        outputs = [out_dir, out_file],
+        outputs = [out_file],
         inputs = depset([framework] + ctx.attr.update_in_place[DefaultInfo].default_runfiles.files.to_list()),
         command = cmd,
         execution_requirements = {"no-remote": "1"},
@@ -69,7 +71,7 @@ def _make_imports(transitive_sets):
 
     # TODO: consider passing along the dsyms
     provider_fields["dsym_imports"] = depset()
-    return [AppleFrameworkImportInfo(**provider_fields)]
+    return [new_appleframeworkimportinfo(**provider_fields)]
 
 def _find_imports_impl(target, ctx):
     static_framework_file = []
@@ -92,9 +94,9 @@ def _find_imports_impl(target, ctx):
 
     if ctx.rule.kind == "objc_import":
         imported_library_file.append(target[apple_common.Objc].imported_library)
-    elif AppleFrameworkImportInfo in target:
-        static_framework_file.append(target[apple_common.Objc].static_framework_file)
 
+    elif AppleFrameworkImportInfo in target:
+        static_framework_file.append(target[apple_common.Objc].imported_library)
         target_dynamic_framework_file = target[apple_common.Objc].dynamic_framework_file
         target_dynamic_framework_file_list = target_dynamic_framework_file.to_list()
         if len(target_dynamic_framework_file_list) > 0:
@@ -159,6 +161,15 @@ def _deduplicate_test_deps(test_deps, deps):
     return filtered
 
 def _file_collector_rule_impl(ctx):
+    cc_toolchain = find_cpp_toolchain(ctx)
+    cc_features = cc_common.configure_features(
+        ctx = ctx,
+        cc_toolchain = cc_toolchain,
+        language = "objc",
+        requested_features = ctx.features,
+        unsupported_features = ctx.disabled_features,
+    )
+
     linker_deps = _merge_linked_inputs(ctx.attr.deps)
     test_linker_deps = _merge_linked_inputs(ctx.attr.test_deps)
     input_static_frameworks = _deduplicate_test_deps(test_linker_deps[0], linker_deps[0])
@@ -173,7 +184,6 @@ def _file_collector_rule_impl(ctx):
         # This should be correctly configured upstream: see setup in rules_ios
         fail("using import_middleman ({}) on wrong transition ({},{},is_device={})".format(ctx.attr.name, platform, arch, ctx.fragments.apple.single_arch_platform.is_device))
 
-    virtualize_frameworks = feature_names.virtualize_frameworks in ctx.features
     merge_keys = [
         "sdk_dylib",
         "sdk_framework",
@@ -183,17 +193,13 @@ def _file_collector_rule_impl(ctx):
         "link_inputs",
         "linkopt",
         "library",
-    ] + ([] if is_sim_arm64 else [
-        # Merge in the objc provider fields
-        "imported_library",
-        "dynamic_framework_file",
-        "static_framework_file",
-    ])
+    ]
 
     objc_provider_fields = objc_provider_utils.merge_objc_providers_dict(
         providers = [dep[apple_common.Objc] for dep in ctx.attr.deps],
         merge_keys = merge_keys,
     )
+
     exisiting_imported_libraries = objc_provider_fields.get("imported_library", depset([]))
     replaced_imported_libraries = _replace_inputs(ctx, exisiting_imported_libraries, input_imported_libraries, _update_lib).inputs
     objc_provider_fields["imported_library"] = depset(_deduplicate_test_deps(test_linker_deps[1], replaced_imported_libraries))
@@ -201,8 +207,12 @@ def _file_collector_rule_impl(ctx):
     existing_static_framework = objc_provider_fields.get("static_framework_file", depset([]))
 
     deduped_static_framework = depset(_deduplicate_test_deps(test_linker_deps[0], existing_static_framework.to_list()))
+
     replaced_static_framework = _replace_inputs(ctx, deduped_static_framework, input_static_frameworks, _update_framework)
-    objc_provider_fields["static_framework_file"] = depset(replaced_static_framework.inputs)
+    objc_provider_fields["imported_library"] = depset([], transitive = [
+        depset(replaced_static_framework.inputs),
+        objc_provider_fields.get("imported_library", depset([])),
+    ])
 
     # Update dynamic frameworks - note that we need to do some additional
     # processing for the ad-hoc files e.g. ( Info.plist )
@@ -210,10 +220,10 @@ def _file_collector_rule_impl(ctx):
     deduped_dynamic_framework = depset(_deduplicate_test_deps(test_linker_deps[2], exisiting_dynamic_framework.to_list()))
     dynamic_framework_file = []
     dynamic_framework_dirs = []
-    replaced_dyanmic_framework = {}
+    replaced_dynamic_framework = {}
     for f in input_dynamic_frameworks:
         out = _update_framework(ctx, f)
-        replaced_dyanmic_framework[f] = out
+        replaced_dynamic_framework[f] = out
         dynamic_framework_file.append(out)
         dynamic_framework_dirs.append(out)
 
@@ -225,16 +235,17 @@ def _file_collector_rule_impl(ctx):
         dynamic_framework_dirs.extend(ad_hoc_file)
 
     for f in deduped_dynamic_framework.to_list():
-        if not replaced_dyanmic_framework.get(f, False):
+        if not replaced_dynamic_framework.get(f, False):
             dynamic_framework_file.append(f)
             dynamic_framework_dirs.append(f)
     objc_provider_fields["dynamic_framework_file"] = depset(dynamic_framework_file)
 
-    replaced_frameworks = replaced_dyanmic_framework.values() + replaced_static_framework.replaced.values()
+    all_replaced_frameworks = replaced_dynamic_framework.values() + replaced_static_framework.replaced.values()
+    replaced_frameworks = replaced_dynamic_framework.values()
 
     compat_link_opt = ["-L__BAZEL_XCODE_DEVELOPER_DIR__/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/iphonesimulator", "-Wl,-weak-lswiftCompatibility51"]
 
-    if len(replaced_frameworks):
+    if len(all_replaced_frameworks):
         # Triple quote the new path to put them first. Eliminating other paths
         # may possible but needs more handling of other kinds of frameworks and
         # has edge cases that require baking assumptions to handle.
@@ -246,7 +257,7 @@ def _file_collector_rule_impl(ctx):
     objc_provider_fields["link_inputs"] = depset(
         transitive = [
             objc_provider_fields.get("link_inputs", depset([])),
-            depset(replaced_frameworks),
+            depset(all_replaced_frameworks),
         ],
     )
 
@@ -254,29 +265,64 @@ def _file_collector_rule_impl(ctx):
         **objc_provider_fields
     )
 
-    additional_providers = []
-    if not virtualize_frameworks:
-        dep_cc_infos = [dep[CcInfo] for dep in ctx.attr.deps if CcInfo in dep]
-        cc_info = cc_common.merge_cc_infos(direct_cc_infos = [], cc_infos = dep_cc_infos)
-        additional_providers.append(cc_info)
-    else:
-        cc_info = objc_provider_utils.merge_cc_info_providers(
-            cc_info_providers = [dep[CcInfo] for dep in ctx.attr.deps if CcInfo in dep],
+    # Create the CcInfo provider, linking information from this is used in Bazel 7+.
+    cc_info = None
+    if is_bazel_7:
+        cc_info = CcInfo(
+            compilation_context = cc_common.create_compilation_context(
+                framework_includes = depset(
+                    transitive = [
+                        dep[CcInfo].compilation_context.framework_includes
+                        for dep in ctx.attr.deps
+                        if CcInfo in dep
+                    ],
+                ),
+            ),
+            linking_context = cc_common.create_linking_context(
+                linker_inputs = depset([
+                    cc_common.create_linker_input(
+                        owner = ctx.label,
+                        user_link_flags = compat_link_opt if len(all_replaced_frameworks) else [],
+                        libraries = depset([
+                            cc_common.create_library_to_link(
+                                actions = ctx.actions,
+                                cc_toolchain = cc_toolchain,
+                                feature_configuration = cc_features,
+                                static_library = static_library,
+                                alwayslink = False,
+                            )
+                            for static_library in replaced_static_framework.replaced.values()
+                        ]),
+                    ),
+                ]),
+            ),
         )
-        additional_providers.append(cc_info)
+    else:
+        dep_cc_infos = [dep[CcInfo] for dep in ctx.attr.deps if CcInfo in dep]
+        cc_info = cc_common.merge_cc_infos(cc_infos = dep_cc_infos)
 
     return [
         DefaultInfo(files = depset(dynamic_framework_dirs + replaced_frameworks)),
         objc,
-    ] + _make_imports(dynamic_framework_dirs) + additional_providers
+        cc_info,
+    ] + _make_imports(dynamic_framework_dirs)
 
 import_middleman = rule(
     implementation = _file_collector_rule_impl,
-    fragments = ["apple"],
+    fragments = ["apple", "cpp"],
+    toolchains = use_cpp_toolchain(),
     attrs = {
         "deps": attr.label_list(aspects = [find_imports]),
         "test_deps": attr.label_list(aspects = [find_imports], allow_empty = True),
         "update_in_place": attr.label(executable = True, default = Label("//tools/m1_utils:update_in_place"), cfg = "exec"),
+        "_cc_toolchain": attr.label(
+            providers = [cc_common.CcToolchainInfo],
+            default = Label("@bazel_tools//tools/cpp:current_cc_toolchain"),
+            doc = """\
+The C++ toolchain from which linking flags and other tools needed by the Swift
+toolchain (such as `clang`) will be retrieved.
+""",
+        ),
     },
     doc = """
 This rule adds the ability to update the Mach-o header on imported

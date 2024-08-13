@@ -1,23 +1,24 @@
 load("//rules:framework.bzl", "apple_framework")
 load("//rules:app.bzl", "ios_application")
-load("//rules:test.bzl", "ios_unit_test")
+load("//rules:test.bzl", "ios_unit_snapshot_test", "ios_unit_test")
 load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
 load(":analysis-tests.bzl", "make_tests")
 load("@build_bazel_rules_apple//apple:resources.bzl", "apple_bundle_import")
 load("//rules/test/output:output_test.bzl", "output_test")
+load("//rules:utils.bzl", "is_bazel_7")
 
 apple_framework(
     name = "CppLib",
     srcs = glob(["Cpp/*"]),
-    platforms = {"ios": "10.0"},
-    swift_version = "5.1",
+    platforms = {"ios": "12.0"},
+    swift_version = "5.9",
     visibility = ["//visibility:public"],
 )
 
 apple_framework(
     name = "FW",
     srcs = glob(["FW/*"]),
-    platforms = {"ios": "10.0"},
+    platforms = {"ios": "12.0"},
     private_headers = glob(["FW/*_Private.*"]),
     visibility = ["//visibility:public"],
 )
@@ -25,7 +26,7 @@ apple_framework(
 apple_framework(
     name = "FW2",
     srcs = glob(["FW2/*"]),
-    platforms = {"ios": "10.0"},
+    platforms = {"ios": "12.0"},
     visibility = ["//visibility:public"],
     deps = [":FW"],
 )
@@ -37,14 +38,14 @@ apple_framework(
 apple_framework(
     name = "OnlySources",
     srcs = glob(["OnlySources/*.m"]),
-    platforms = {"ios": "10.0"},
+    platforms = {"ios": "12.0"},
 )
 
 apple_framework(
     name = "SwiftLib",
     srcs = glob(["Swift/*"]),
-    platforms = {"ios": "10.0"},
-    swift_version = "5.1",
+    platforms = {"ios": "12.0"},
+    swift_version = "5.9",
     visibility = ["//visibility:public"],
 )
 
@@ -62,7 +63,7 @@ apple_framework(
         "MACRO_F=0",
         "\'MACRO_G=1 2 3\'",
     ],
-    platforms = {"ios": "10.0"},
+    platforms = {"ios": "12.0"},
     visibility = ["//visibility:public"],
 )
 
@@ -74,13 +75,13 @@ apple_framework(
         "MACRO_I=1",
         "MACRO_J=0",
     ],
-    platforms = {"ios": "10.0"},
+    platforms = {"ios": "12.0"},
     swift_defines = [
         "MACRO_K",
         "MACRO_L=1",
         "MACRO_M=0",
     ],
-    swift_version = "5.1",
+    swift_version = "5.9",
     visibility = ["//visibility:public"],
 )
 
@@ -89,7 +90,7 @@ ios_application(
     srcs = ["App/main.m"],
     bundle_id = "com.example.app",
     extensions = ["//tests/ios/extensions:ExampleExtension"],
-    minimum_os_version = "10.0",
+    minimum_os_version = "12.0",
     visibility = ["//visibility:public"],
     deps = [
         ":FW",
@@ -102,7 +103,7 @@ ios_application(
     name = "AppWithProvisioningProfile",
     srcs = ["App/main.m"],
     bundle_id = "com.example.app",
-    minimum_os_version = "10.0",
+    minimum_os_version = "12.0",
     provisioning_profile = "@build_bazel_rules_ios//tests/ios:integration-test.mobileprovision",
     visibility = ["//visibility:public"],
     deps = [
@@ -115,7 +116,7 @@ ios_application(
 ios_unit_test(
     name = "TestAppWithProvisioningProfile",
     srcs = ["empty_tests.m"],
-    minimum_os_version = "10.0",
+    minimum_os_version = "12.0",
     provisioning_profile = "@build_bazel_rules_ios//tests/ios:integration-test.mobileprovision",
     test_host = ":AppWithProvisioningProfile",
 )
@@ -127,7 +128,7 @@ ios_application(
     extensions = [
         "//tests/ios/extensions:ExampleExtension",
     ],
-    minimum_os_version = "10.0",
+    minimum_os_version = "12.0",
     visibility = ["//visibility:public"],
     deps = [
         ":FW",
@@ -139,7 +140,7 @@ ios_application(
     name = "AppWithEmptyDep",
     srcs = ["App/main.m"],
     bundle_id = "com.example.app",
-    minimum_os_version = "10.0",
+    minimum_os_version = "12.0",
     visibility = ["//visibility:public"],
     deps = [
         ":Empty",
@@ -153,7 +154,7 @@ ios_application(
     name = "AppWithResources",
     srcs = ["App/main.m"],
     bundle_id = "com.example.app",
-    minimum_os_version = "10.0",
+    minimum_os_version = "12.0",
     resources = [
         "Resources/CustomView.xib",
     ],
@@ -168,7 +169,7 @@ ios_application(
     name = "AppWithSettings",
     srcs = ["App/main.m"],
     bundle_id = "com.example.app",
-    minimum_os_version = "10.0",
+    minimum_os_version = "12.0",
     settings_bundle = ":settings_bundle",
     deps = [
         ":Empty",
@@ -186,7 +187,7 @@ ios_application(
         "B=1",
         "C=0",
     ],
-    minimum_os_version = "10.0",
+    minimum_os_version = "12.0",
     objc_defines = [
         "D",
         "E=1",
@@ -199,7 +200,7 @@ ios_application(
         "L=1",
         "M=0",
     ],
-    swift_version = "5.1",
+    swift_version = "5.9",
     deps = [
         ":Empty",
         ":FW",
@@ -237,7 +238,7 @@ ios_application(
     srcs = ["App/main.m"],
     bundle_id = "com.example.app",
     infoplists = [INFOPLIST],
-    minimum_os_version = "10.0",
+    minimum_os_version = "12.0",
     deps = [
         ":Empty",
         ":FW",
@@ -248,8 +249,21 @@ ios_application(
 ios_unit_test(
     name = "TestAppWithInfoPlist",
     srcs = ["infoplist_test.m"],
-    minimum_os_version = "10.0",
+    minimum_os_version = "12.0",
+    test_exec_properties = {},
     test_host = ":AppWithInfoPlist",
+)
+
+ios_unit_snapshot_test(
+    name = "TestSnapshots",
+    srcs = ["snapshot_test.m"],
+    # NOTE: Bazel 7 fixed linking issues which required adding this dep here in the first place
+    #       in Bazel 7 it's now properly linked from the dep in //rules/test/snapshot:BazelRunfileBridge
+    internal_test_deps = [] if is_bazel_7 else ["@bazel_tools//tools/cpp/runfiles"],
+    minimum_os_version = "12.0",
+    test_exec_properties = {},
+    test_host = ":AppWithInfoPlist",
+    deps = ["//rules/test/snapshot:BazelRunfileBridge"],
 )
 
 # Configurable xcconfig, infoplist and entitlements
@@ -300,7 +314,7 @@ ios_application(
             INFOPLIST_2,
         ],
     },
-    minimum_os_version = "10.0",
+    minimum_os_version = "12.0",
     xcconfig = {
         "FOO": "YES",
         "GCC_TREAT_WARNINGS_AS_ERRORS": "YES",
@@ -342,7 +356,7 @@ ios_application(
             INFOPLIST,
         ],
     },
-    minimum_os_version = "10.0",
+    minimum_os_version = "12.0",
     xcconfig = {
         "FOO": "YES",
         "GCC_TREAT_WARNINGS_AS_ERRORS": "YES",
@@ -379,7 +393,7 @@ ios_application(
         ":red": [],
     }),
     infoplists = [INFOPLIST],
-    minimum_os_version = "10.0",
+    minimum_os_version = "12.0",
     objc_copts = select({
         ":blue": ["-Wno-error=at-protocol"],
         ":red": [],
@@ -388,7 +402,7 @@ ios_application(
         ":blue": ["-DDEBUG"],
         ":red": [],
     }),
-    swift_version = "5.1",
+    swift_version = "5.9",
     deps = [
         ":CppLib",
         ":Empty",
@@ -415,7 +429,7 @@ ios_application(
     testonly = True,
     srcs = ["AppTestOnly/App.swift"],
     bundle_id = "com.example.app",
-    minimum_os_version = "10.0",
+    minimum_os_version = "12.0",
     visibility = ["//visibility:public"],
     deps = [
         "//tests/ios/frameworks/testonly:MixedSourceTestLib",
@@ -429,10 +443,28 @@ ios_application(
     srcs = ["AppTestOnly/App.swift"],
     bundle_id = "com.example.app",
     extensions = ["//tests/ios/extensions:ExampleExtensionWithTestOnly"],
-    minimum_os_version = "10.0",
+    minimum_os_version = "12.0",
     visibility = ["//visibility:public"],
     deps = [
         "//tests/ios/frameworks/testonly:MixedSourceTestLib",
         "//tests/ios/frameworks/testonly:SwiftLibrary",
+    ],
+)
+
+ios_application(
+    name = "AppWithDisabledCodesigning",
+    srcs = ["App/main.m"],
+    bundle_id = "com.example.app",
+    codesign_inputs = ["@build_bazel_rules_apple//tools/codesigningtool:disable_signing_resource_rules"],
+    codesignopts = [
+        "--digest-algorithm=sha1",
+        "--resource-rules=$(RESOURCE_RULES)",
+    ],
+    minimum_os_version = "12.0",
+    toolchains = ["@build_bazel_rules_apple//tools/codesigningtool:disable_signing_resource_rules"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":FW",
+        ":OnlySources",
     ],
 )

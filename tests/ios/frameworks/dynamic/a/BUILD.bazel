@@ -6,7 +6,22 @@ apple_framework(
     bundle_id = "com.example.a",
     infoplists = ["Info.plist"],
     link_dynamic = True,
-    platforms = {"ios": "10.0"},
+    platforms = {"ios": "12.0"},
+    visibility = ["//visibility:public"],
+    xcconfig = {"APPLICATION_EXTENSION_API_ONLY": "YES"},
+    deps = ["//tests/ios/frameworks/dynamic/b"],
+)
+
+apple_framework(
+    name = "aWithResourceBundles",
+    srcs = glob(["*.swift"]),
+    bundle_id = "com.example.aWithResourceBundles",
+    infoplists = ["Info.plist"],
+    link_dynamic = True,
+    platforms = {"ios": "12.0"},
+    resource_bundles = {
+        "aWithResourceBundles": ["data.txt"],
+    },
     visibility = ["//visibility:public"],
     xcconfig = {"APPLICATION_EXTENSION_API_ONLY": "YES"},
     deps = ["//tests/ios/frameworks/dynamic/b"],

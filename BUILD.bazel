@@ -4,12 +4,9 @@ load("@build_bazel_rules_swift//swift/internal:feature_names.bzl", "SWIFT_FEATUR
 load("//rules:features.bzl", "feature_names")
 load("@bazel_skylib//lib:selects.bzl", "selects")
 
-sh_binary(
+alias(
     name = "buildifier",
-    srcs = select({
-        "@bazel_tools//src/conditions:darwin_x86_64": ["@buildifier.mac.amd64//file"],
-        "@bazel_tools//src/conditions:darwin_arm64": ["@buildifier.mac.arm64//file"],
-    }),
+    actual = "//tools:buildifier",
 )
 
 config_setting(
@@ -30,6 +27,13 @@ config_setting(
     name = "compile_with_xcode",
     values = {
         "features": feature_names.compile_with_xcode,
+    },
+)
+
+config_setting(
+    name = "swift_disable_import_underlying_module",
+    values = {
+        "features": feature_names.swift_disable_import_underlying_module,
     },
 )
 
@@ -131,32 +135,34 @@ selects.config_setting_group(
 )
 
 xcode_version(
-    name = "version13_4_1_13F100",
+    name = "version15_2_0_15C500b",
     aliases = [
-        "13.4",
-        "13.4.1",
-        "13.4.1.13F100",
+        "15.2",
+        "15.2.0",
+        "15.2.0.15C500b",
+        "15C500b",
     ],
-    default_ios_sdk_version = "15.5",
-    default_macos_sdk_version = "12.3",
-    default_tvos_sdk_version = "15.4",
-    default_watchos_sdk_version = "8.5",
-    version = "13.4.1.13F100",
+    default_ios_sdk_version = "17.2",
+    default_macos_sdk_version = "14.2",
+    default_tvos_sdk_version = "17.2",
+    default_visionos_sdk_version = "1.0",
+    default_watchos_sdk_version = "10.2",
+    version = "15.2.0.15C500b",
 )
 
 xcode_config(
     name = "host_xcodes",
-    default = ":version13_4_1_13F100",
+    default = ":version15_2_0_15C500b",
     versions = [
-        ":version13_4_1_13F100",
+        ":version15_2_0_15C500b",
     ],
     visibility = ["//visibility:public"],
 )
 
 available_xcodes(
     name = "host_available_xcodes",
-    default = ":version13_4_1_13F100",
+    default = ":version15_2_0_15C500b",
     versions = [
-        ":version13_4_1_13F100",
+        ":version15_2_0_15C500b",
     ],
 )

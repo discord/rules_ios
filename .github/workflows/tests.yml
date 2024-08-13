@@ -11,128 +11,198 @@ concurrency:
   group: ${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
 
+# NOTE: because matrix cannot easily be shared across jobs, it should be copied to each job
+#       when adding a new job / changing the matrix, make sure to update all jobs
 jobs:
   integration_tests:
-    name: Build and Test
-    runs-on: macos-12
+    name: Build and test (Bazel ${{ matrix.bazel_version }} / Xcode ${{ matrix.xcode_version }} / Virtual Frameworks ${{ matrix.virtual_frameworks }})
+    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        bazel_version: [6.5.0, 7.1.0]
+        xcode_version: [15.2]
+        virtual_frameworks: [true, false]
+    env:
+        XCODE_VERSION: ${{ matrix.xcode_version }}
+        USE_BAZEL_VERSION: ${{ matrix.bazel_version }}
     steps:
-      - uses: actions/checkout@v3
-      - name: Select Xcode
-        run: .github/workflows/xcode_select.sh
+      - uses: actions/checkout@v4
+      - name: Preflight Env
+        run: .github/workflows/preflight_env.sh
+      - if: matrix.virtual_frameworks
+        name: Add vfs config
+        run: |
+          echo "build --config=vfs" >> user.bazelrc
       - name: Build and Test
         run: |
-          # Host config
-          bazelisk test --local_test_jobs=1 -- //... -//tests/ios/...
+          # non-iOS tests
+          bazelisk test \
+            -- \
+            //... \
+            -//tests/ios/...
 
-          # `deleted_packages` is needed below in order to override the value of the .bazelrc file
-          bazelisk test --local_test_jobs=1 --apple_platform_type=ios --deleted_packages='' -- //tests/ios/...
-      - uses: actions/upload-artifact@v2
-        if: failure()
-        with:
-          name: bazel-testlogs
-          path: bazel-testlogs
-  build_virtual_frameworks:
-    # Build the entire tree with this feature enabled. Longer term, we'll likely
-    # consider merging this feature into the default behavior and can re-align
-    # the CI job
-    name: Build and Test ( Virtual Frameworks )
-    runs-on: macos-12
-    steps:
-      - uses: actions/checkout@v3
-      - name: Select Xcode
-        run: .github/workflows/xcode_select.sh
-      - name: Build and Test
-        run: |
-          # Host config
-          bazelisk build --features apple.virtualize_frameworks --local_test_jobs=1 -- //... -//tests/ios/...
+          # Clean up after simctl (https://github.com/bazelbuild/rules_apple/issues/185)
+          pgrep Simulator | xargs kill || true
 
-          # `deleted_packages` is needed below in order to override the value of the .bazelrc file
-          bazelisk build --features apple.virtualize_frameworks \
-              --local_test_jobs=1 \
-              --apple_platform_type=ios \
-              --deleted_packages='' \
-              -- //tests/ios/... \
-              -//tests/ios/frameworks/sources-with-prebuilt-binaries/... # Needs more work for pre-built binaries
-      - uses: actions/upload-artifact@v2
+          # Create single ephemeral iOS sim
+          SIMULATOR_UDID=$(python3 tools/tests/prepare_sim.py)
+
+          # iOS tests
+          bazelisk test \
+            --config=ios \
+            --test_arg=--destination=platform=ios_simulator,id=$SIMULATOR_UDID \
+            -- \
+            //tests/ios/...
+      - uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: bazel-testlogs
           path: bazel-testlogs
 
   build_arm64_simulator:
-    name: Build arm64 Simulator
-    runs-on: macos-12
+    name: arm64 Simulator (Bazel ${{ matrix.bazel_version }} / Xcode ${{ matrix.xcode_version }})
+    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        bazel_version: [6.5.0, 7.1.0]
+        xcode_version: [15.2]
+    env:
+        XCODE_VERSION: ${{ matrix.xcode_version }}
+        USE_BAZEL_VERSION: ${{ matrix.bazel_version }}
     steps:
-      - uses: actions/checkout@v3
-      - name: Select Xcode
-        run: .github/workflows/xcode_select.sh
+      - uses: actions/checkout@v4
+      - name: Preflight Env
+        run: .github/workflows/preflight_env.sh
       - name: Build and Test
         run: |
-          bazelisk build --ios_multi_cpus=sim_arm64  --features apple.virtualize_frameworks -- //... -//tests/ios/...
+          bazelisk build \
+            --config=vfs \
+            --features apple.arm64_simulator_use_device_deps \
+            --ios_multi_cpus=sim_arm64  \
+            -- \
+            //... \
+            -//tests/ios/...
 
           # Misc issues:
-          # Carthage is busted for -//tests/ios/frameworks/sources-with-prebuilt-binaries/...
-          # Fails on a non fat framework for //tests/ios/unit-test/test-imports-app/
-          bazelisk build --ios_multi_cpus=sim_arm64 --features apple.virtualize_frameworks \
-              --apple_platform_type=ios \
-              --deleted_packages='' \
-              -- //tests/ios/... \
-              -//tests/ios/frameworks/sources-with-prebuilt-binaries/... \
-              -//tests/ios/unit-test/test-imports-app/...
-
-      - uses: actions/upload-artifact@v2
+          #   - Fails on a non fat framework for //tests/ios/unit-test/test-imports-app/
+          bazelisk build \
+            --config=ios \
+            --config=vfs \
+            --features apple.arm64_simulator_use_device_deps \
+            --ios_multi_cpus=sim_arm64 \
+            -- \
+            //tests/ios/... \
+            -//tests/ios/unit-test/test-imports-app/...
+      - uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: bazel-testlogs
           path: bazel-testlogs
 
-  buildifier:
-    name: Check Starlark and Docs
-    runs-on: macos-12
+  buildifier-and-docs:
+    name: Buildifier and Documentation (Bazel ${{ matrix.bazel_version }} / Xcode ${{ matrix.xcode_version }})
+    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        bazel_version: [7.1.0] # Only run on latest Bazel version as stardoc changes between versions and produces different results
+        xcode_version: [15.2]
+    env:
+        XCODE_VERSION: ${{ matrix.xcode_version }}
+        USE_BAZEL_VERSION: ${{ matrix.bazel_version }}
     steps:
-      - uses: actions/checkout@v3
-      - name: Select Xcode
-        run: .github/workflows/xcode_select.sh
+      - uses: actions/checkout@v4
+      - name: Preflight Env
+        run: .github/workflows/preflight_env.sh
         # Note: we need to pass the absolute to the Bazel run
       - name: buildifier
-        run: find $PWD -type f \( -name 'WORKSPACE' -o -name '*.bzl' -o -name '*.bazel' \) | xargs bazel run buildifier -- -lint=fix && git diff --exit-code
+        run: |
+          find $PWD -type f \( -name 'WORKSPACE' -o -name '*.bzl' -o -name '*.bazel' \) | xargs bazel run //:buildifier -- -lint=fix
+          git diff --exit-code
       - name: Check docs
-        run: bazelisk run docs && git diff --exit-code docs
-  xcodeproj_tests_xcode_13_4_1:
-    name: .xcodeproj Tests on Xcode 13.4.1
-    runs-on: macos-12
-    steps:
-      - uses: actions/checkout@v3
-      - name: Select Xcode 13.4.1
-        run: .github/workflows/xcode_select.sh
-      - name: Run tests
-        run: ./tests/xcodeproj-tests.sh --clean && ./tests/test-tests.sh
-      - uses: actions/upload-artifact@v2
+        run: |
+          bazelisk run \
+            //docs
+          git diff --exit-code docs
+      - uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: bazel-testlogs
           path: bazel-testlogs
 
-  lldb_ios_tests_xcode_13_4_1:
-    name: LLDB tests on Xcode 13.4.1
-    runs-on: macos-12
+  xcodeproj_tests:
+    name: Legacy xcodeproj tests (Bazel ${{ matrix.bazel_version }} / Xcode ${{ matrix.xcode_version }})
+    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        bazel_version: [6.5.0]  # Only test on a single Bazel version as fixtures require updates across Bazel verisons
+        xcode_version: [15.2]
+    env:
+        XCODE_VERSION: ${{ matrix.xcode_version }}
+        USE_BAZEL_VERSION: ${{ matrix.bazel_version }}
     steps:
-      - uses: actions/checkout@v3
-      - name: Select Xcode 13.4.1
-        run: .github/workflows/xcode_select.sh
+      - uses: actions/checkout@v4
+      - name: Preflight Env
+        run: .github/workflows/preflight_env.sh --no-bzlmod
       - name: Run tests
-        run: bazelisk test tests/ios/lldb/app:objc_app_po_test  tests/ios/lldb/app:objc_app_variable_test --config lldb_ios_test
-      - uses: actions/upload-artifact@v2
+        run: ./tests/xcodeproj-tests.sh --run && ./tests/test-tests.sh
+      - uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: bazel-testlogs
           path: bazel-testlogs
-  multi_arch_support:
-    name: Build iOS App for Multiple Architecture
-    runs-on: macos-12
+
+  lldb_ios_tests_xcode:
+    name: LLDB tests (Bazel ${{ matrix.bazel_version }} / Xcode ${{ matrix.xcode_version }})
+    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        bazel_version: [6.5.0, 7.1.0]
+        xcode_version: [15.2]
+    env:
+        XCODE_VERSION: ${{ matrix.xcode_version }}
+        USE_BAZEL_VERSION: ${{ matrix.bazel_version }}
     steps:
-      - uses: actions/checkout@v3
-      - name: Select Xcode
-        run: .github/workflows/xcode_select.sh
+      - uses: actions/checkout@v4
+      - name: Preflight Env
+        run: .github/workflows/preflight_env.sh
+      - name: Run tests
+        run: |
+          bazelisk test \
+            --config=ios_lldb_test \
+            -- \
+            tests/ios/lldb/app:objc_app_po_test \
+            tests/ios/lldb/app:objc_app_variable_test
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: bazel-testlogs
+          path: bazel-testlogs
+
+  multi_arch_support:
+    # i386 was removed on rules_apple 3.x.x - this test case needs reworking
+    # to exemplify fat binaries on the latest version
+    name: iOS App Multiple Architectures (Bazel ${{ matrix.bazel_version }} / Xcode ${{ matrix.xcode_version }})
+    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        bazel_version: [6.5.0, 7.1.0]
+        xcode_version: [15.2]
+    env:
+        XCODE_VERSION: ${{ matrix.xcode_version }}
+        USE_BAZEL_VERSION: ${{ matrix.bazel_version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Preflight Env
+        run: .github/workflows/preflight_env.sh
       - name: Build App
-        run: bazelisk build -s tests/ios/app/App --apple_platform_type=ios --ios_minimum_os=10.2  --ios_multi_cpus=i386,x86_64
+        run: |
+          bazelisk build \
+            --config=ios_multi_arch_test \
+            -- \
+            tests/ios/app/App

@@ -1,7 +1,7 @@
 """
 ############################################################################
 #                   THIS IS GENERATED CODE                                 #
-# Extracted from Xcode 13.4.1                                     #
+# Extracted from Xcode 15.2                                     #
 # To update, in rules_ios run `bazel run data_generators:extract_xcspecs`  #
 ############################################################################
 """
@@ -34,20 +34,13 @@ SETTINGS = {
                     "-target",
                     "$(value)-$(LLVM_TARGET_TRIPLE_VENDOR)-$(LLVM_TARGET_TRIPLE_OS_VERSION)$(LLVM_TARGET_TRIPLE_SUFFIX)",
                 ],
-                "Condition": "com_apple_compilers_llvm_clang_1_0__CLANG_TARGET_TRIPLE_ARCHS__Condition",
                 "DefaultValue": "com_apple_compilers_llvm_clang_1_0__CLANG_TARGET_TRIPLE_ARCHS__DefaultValue",
                 "Type": "StringList",
             },
             "CLANG_TARGET_TRIPLE_VARIANTS": {
                 "CommandLineFlag": "-target-variant",
-                "Condition": "com_apple_compilers_llvm_clang_1_0__CLANG_TARGET_TRIPLE_VARIANTS__Condition",
                 "ConditionFlavors": ["arch"],
                 "Type": "StringList",
-            },
-            "arch": {
-                "CommandLineFlag": "-arch",
-                "Condition": "com_apple_compilers_llvm_clang_1_0__arch__Condition",
-                "Type": "String",
             },
             "CLANG_TOOLCHAIN_FLAGS": {"CommandLineArgs": ["$(value)"], "Type": "StringList"},
             "diagnostic_message_length": {
@@ -77,7 +70,10 @@ SETTINGS = {
                 "Type": "Boolean",
             },
             "CLANG_COLOR_DIAGNOSTICS": {
-                "CommandLineArgs": {"NO": [], "YES": ["-fcolor-diagnostics"]},
+                "CommandLineArgs": {
+                    "NO": ["-fno-color-diagnostics"],
+                    "YES": ["-fcolor-diagnostics"],
+                },
                 "DefaultValue": "com_apple_compilers_llvm_clang_1_0__CLANG_COLOR_DIAGNOSTICS__DefaultValue",
                 "Type": "Boolean",
             },
@@ -128,6 +124,8 @@ SETTINGS = {
                     "gnu99",
                     "c11",
                     "gnu11",
+                    "c17",
+                    "gnu17",
                     "compiler-default",
                 ],
             },
@@ -136,10 +134,10 @@ SETTINGS = {
                 "CommandLineArgs": {
                     "<<otherwise>>": ["-std=$(value)"],
                     "c++0x": ["-std=c++11"],
-                    "c++17": ["-std=c++1z"],
+                    "c++23": ["-std=c++2b"],
                     "compiler-default": [],
                     "gnu++0x": ["-std=gnu++11"],
-                    "gnu++17": ["-std=gnu++1z"],
+                    "gnu++23": ["-std=gnu++2b"],
                 },
                 "DefaultValue": "com_apple_compilers_llvm_clang_1_0__CLANG_CXX_LANGUAGE_STANDARD__DefaultValue",
                 "FileTypes": ["sourcecode.cpp.cpp", "sourcecode.cpp.objcpp"],
@@ -155,6 +153,8 @@ SETTINGS = {
                     "gnu++17",
                     "c++20",
                     "gnu++20",
+                    "c++23",
+                    "gnu++23",
                     "compiler-default",
                 ],
             },
@@ -350,6 +350,12 @@ SETTINGS = {
             "CLANG_ENABLE_BOUNDS_ATTRIBUTES": {
                 "CommandLineArgs": {"NO": [], "YES": ["-fbounds-attributes"]},
                 "DefaultValue": "com_apple_compilers_llvm_clang_1_0__CLANG_ENABLE_BOUNDS_ATTRIBUTES__DefaultValue",
+                "FileTypes": ["sourcecode.c.c"],
+                "Type": "Boolean",
+            },
+            "CLANG_ENABLE_BOUNDS_SAFETY": {
+                "CommandLineArgs": {"NO": [], "YES": ["-fbounds-safety"]},
+                "DefaultValue": "com_apple_compilers_llvm_clang_1_0__CLANG_ENABLE_BOUNDS_SAFETY__DefaultValue",
                 "FileTypes": ["sourcecode.c.c"],
                 "Type": "Boolean",
             },
@@ -921,7 +927,7 @@ SETTINGS = {
             },
             "GCC_WARN_INHIBIT_ALL_WARNINGS": {
                 "Category": "WarningsPolicy",
-                "CommandLineArgs": {"NO": [], "YES": ["-w"]},
+                "CommandLineFlag": "-w",
                 "DefaultValue": "com_apple_compilers_llvm_clang_1_0__GCC_WARN_INHIBIT_ALL_WARNINGS__DefaultValue",
                 "Type": "Boolean",
             },
@@ -1166,15 +1172,23 @@ SETTINGS = {
                 ],
                 "Type": "Boolean",
             },
+            "CLANG_WARN_IMPLICIT_FALLTHROUGH": {
+                "Category": "Warnings",
+                "CommandLineArgs": {
+                    "NO": ["-Wno-implicit-fallthrough"],
+                    "YES": ["-Wimplicit-fallthrough"],
+                    "YES_ERROR": ["-Werror=implicit-fallthrough"],
+                },
+                "DefaultValue": "com_apple_compilers_llvm_clang_1_0__CLANG_WARN_IMPLICIT_FALLTHROUGH__DefaultValue",
+                "Type": "Enumeration",
+                "Values": ["YES", "NO", "YES_ERROR"],
+            },
             "CLANG_TRIVIAL_AUTO_VAR_INIT": {
                 "CommandLineArgs": {
                     "default": [],
                     "pattern": ["-ftrivial-auto-var-init=pattern"],
                     "uninitialized": ["-ftrivial-auto-var-init=uninitialized"],
-                    "zero": [
-                        "-ftrivial-auto-var-init=zero",
-                        "-enable-trivial-auto-var-init-zero-knowing-it-will-be-removed-from-clang",
-                    ],
+                    "zero": ["-ftrivial-auto-var-init=zero"],
                 },
                 "DefaultValue": "com_apple_compilers_llvm_clang_1_0__CLANG_TRIVIAL_AUTO_VAR_INIT__DefaultValue",
                 "FileTypes": [
@@ -1339,6 +1353,16 @@ SETTINGS = {
                 "FileTypes": ["sourcecode.c.objc", "sourcecode.cpp.objcpp"],
                 "Type": "Boolean",
             },
+            "CLANG_ENABLE_OBJC_ARC_EXCEPTIONS": {
+                "Category": "LanguageObjC",
+                "CommandLineArgs": {
+                    "NO": [],
+                    "YES": ["-fobjc-arc-exceptions"],
+                },
+                "DefaultValue": "com_apple_compilers_llvm_clang_1_0__CLANG_ENABLE_OBJC_ARC_EXCEPTIONS__DefaultValue",
+                "FileTypes": ["sourcecode.c.objc", "sourcecode.cpp.objcpp"],
+                "Type": "Boolean",
+            },
             "GCC_CW_ASM_SYNTAX": {
                 "Architectures": ["i386", "x86_64"],
                 "Category": "Language",
@@ -1422,15 +1446,6 @@ SETTINGS = {
                     "sourcecode.cpp.objcpp",
                 ],
                 "Type": "Boolean",
-            },
-            "GCC_MACOSX_VERSION_MIN": {
-                "CommandLineArgs": {
-                    "": [],
-                    "<<otherwise>>": ["-$(DEPLOYMENT_TARGET_CLANG_FLAG_NAME)=$(value)"],
-                },
-                "Condition": "com_apple_compilers_llvm_clang_1_0__GCC_MACOSX_VERSION_MIN__Condition",
-                "DefaultValue": "com_apple_compilers_llvm_clang_1_0__GCC_MACOSX_VERSION_MIN__DefaultValue",
-                "Type": "String",
             },
             "GCC_DEBUG_INFORMATION_FORMAT": {
                 "CommandLineArgs": {
@@ -1761,13 +1776,7 @@ SETTINGS = {
                 "Type": "Boolean",
             },
             "CLANG_ENABLE_CODE_COVERAGE": {
-                "Category": "CodeGeneration",
                 "DefaultValue": "com_apple_compilers_llvm_clang_1_0__CLANG_ENABLE_CODE_COVERAGE__DefaultValue",
-                "Description": "Enables building with code coverage " +
-                               "instrumentation. This is only used when the build " +
-                               "has code coverage enabled, which is typically " +
-                               "done via the Xcode scheme settings.",
-                "DisplayName": "Enable Code Coverage Support",
                 "Type": "Boolean",
             },
             "CLANG_COVERAGE_MAPPING": {
@@ -1797,6 +1806,7 @@ SETTINGS = {
                     "armv7",
                     "armv7s",
                     "armv7k",
+                    "arm64_32",
                 ],
                 "CommandLineArgs": {
                     "bitcode": ["-fembed-bitcode"],
@@ -1913,6 +1923,29 @@ SETTINGS = {
                 "DefaultValue": "com_apple_compilers_llvm_clang_1_0__CLANG_UNDEFINED_BEHAVIOR_SANITIZER_NULLABILITY__DefaultValue",
                 "Type": "Boolean",
             },
+            "CLANG_UNDEFINED_BEHAVIOR_SANITIZER_TRAP_ON_SECURITY_ISSUES": {
+                "CommandLineArgs": {
+                    "NO": [],
+                    "YES": [
+                        "-fsanitize=signed-integer-overflow,unsigned-integer-overflow,implicit-conversion,bounds,pointer-overflow",
+                        "-fsanitize-trap=signed-integer-overflow,unsigned-integer-overflow,implicit-conversion,bounds,pointer-overflow",
+                    ],
+                },
+                "DefaultValue": "com_apple_compilers_llvm_clang_1_0__CLANG_UNDEFINED_BEHAVIOR_SANITIZER_TRAP_ON_SECURITY_ISSUES__DefaultValue",
+                "Type": "Boolean",
+            },
+            "CLANG_UNDEFINED_BEHAVIOR_SANITIZER_TRAP_ON_SECURITY_ISSUES_OPT": {
+                "CommandLineArgs": {
+                    "NO": [],
+                    "YES": [
+                        "-fsanitize=object-size",
+                        "-fsanitize-trap=object-size",
+                    ],
+                },
+                "Condition": "com_apple_compilers_llvm_clang_1_0__CLANG_UNDEFINED_BEHAVIOR_SANITIZER_TRAP_ON_SECURITY_ISSUES_OPT__Condition",
+                "DefaultValue": "com_apple_compilers_llvm_clang_1_0__CLANG_UNDEFINED_BEHAVIOR_SANITIZER_TRAP_ON_SECURITY_ISSUES_OPT__DefaultValue",
+                "Type": "Boolean",
+            },
             "CLANG_INDEX_STORE_PATH": {
                 "DefaultValue": "com_apple_compilers_llvm_clang_1_0__CLANG_INDEX_STORE_PATH__DefaultValue",
                 "Type": "Path",
@@ -1930,7 +1963,7 @@ SETTINGS = {
                 "Type": "Boolean",
             },
             "CLANG_THREAD_SANITIZER": {
-                "Architectures": ["x86_64", "arm64", "arm64e"],
+                "Architectures": ["x86_64", "x86_64h", "arm64", "arm64e"],
                 "CommandLineArgs": {"NO": [], "YES": ["-fsanitize=thread"]},
                 "DefaultValue": "com_apple_compilers_llvm_clang_1_0__CLANG_THREAD_SANITIZER__DefaultValue",
                 "Type": "Boolean",
@@ -1958,6 +1991,24 @@ SETTINGS = {
                 "CommandLineFlag": "-arcmt-migrate-report-output",
                 "Type": "Path",
             },
+            "CLANG_ENABLE_PREFIX_MAPPING": {
+                "CommandLineArgs": {
+                    "NO": [],
+                    "YES": [
+                        "-fdepscan-prefix-map-sdk=/^sdk",
+                        "-fdepscan-prefix-map-toolchain=/^toolchain",
+                        "-fdepscan-prefix-map=$(DEVELOPER_DIR)=/^xcode",
+                    ],
+                },
+                "Condition": "com_apple_compilers_llvm_clang_1_0__CLANG_ENABLE_PREFIX_MAPPING__Condition",
+                "Type": "Boolean",
+            },
+            "CLANG_OTHER_PREFIX_MAPPINGS": {
+                "CommandLineArgs": ["-fdepscan-prefix-map=$(value)"],
+                "Condition": "com_apple_compilers_llvm_clang_1_0__CLANG_OTHER_PREFIX_MAPPINGS__Condition",
+                "DefaultValue": "com_apple_compilers_llvm_clang_1_0__CLANG_OTHER_PREFIX_MAPPINGS__DefaultValue",
+                "Type": "StringList",
+            },
         },
         "PatternsOfFlagsNotAffectingPrecomps": [
             "-v",
@@ -1971,6 +2022,7 @@ SETTINGS = {
             "-fmacro-backtrace-limit*",
             "-fmessage-length*",
             "-fcolor-diagnostics",
+            "-fno-color-diagnostics",
             "-fvectorize",
             "-flto",
             "-fstrict-aliasing",
@@ -2123,7 +2175,6 @@ SETTINGS = {
         "CommandIdentifier": "create:$(OutputPath)",
         "CommandLine": "[exec-path] [options] [special-args] -o $(OutputPath)",
         "CommandOutputParser": "XCGccCommandOutputParser",
-        "DependencyInfoFile": "$(LD_DEPENDENCY_INFO_FILE)",
         "Description": "Link executable using Apple Mach-O Linker (ld)",
         "ExecDescription": "Link $(OutputFile:file)",
         "Identifier": "com.apple.pbx.linkers.ld",
@@ -2137,18 +2188,22 @@ SETTINGS = {
         "IsAbstract": "Yes",
         "Name": "Ld",
         "Options": {
+            "LD_DETERMINISTIC_MODE": {
+                "CommandLineArgs": {"NO": [], "YES": ["-Xlinker", "-reproducible"]},
+                "DefaultValue": "com_apple_pbx_linkers_ld__LD_DETERMINISTIC_MODE__DefaultValue",
+                "SupportedVersionRanges": ["804"],
+                "Type": "Boolean",
+            },
             "LD_TARGET_TRIPLE_ARCHS": {
                 "CommandLineArgs": [
                     "-target",
                     "$(value)-$(LLVM_TARGET_TRIPLE_VENDOR)-$(LLVM_TARGET_TRIPLE_OS_VERSION)$(LLVM_TARGET_TRIPLE_SUFFIX)",
                 ],
-                "Condition": "com_apple_pbx_linkers_ld__LD_TARGET_TRIPLE_ARCHS__Condition",
                 "DefaultValue": "com_apple_pbx_linkers_ld__LD_TARGET_TRIPLE_ARCHS__DefaultValue",
                 "Type": "StringList",
             },
             "LD_TARGET_TRIPLE_VARIANTS": {
                 "CommandLineFlag": "-target-variant",
-                "Condition": "com_apple_pbx_linkers_ld__LD_TARGET_TRIPLE_VARIANTS__Condition",
                 "ConditionFlavors": ["arch"],
                 "Type": "StringList",
             },
@@ -2156,11 +2211,6 @@ SETTINGS = {
                 "CommandLineArgs": "$(value)",
                 "ConditionFlavors": ["arch"],
                 "Type": "StringList",
-            },
-            "arch": {
-                "CommandLineFlag": "-arch",
-                "Condition": "com_apple_pbx_linkers_ld__arch__Condition",
-                "Type": "String",
             },
             "MACH_O_TYPE": {
                 "Type": "Enumeration",
@@ -2170,6 +2220,16 @@ SETTINGS = {
                     {"CommandLineFlag": "-bundle", "Value": "mh_bundle"},
                     {"CommandLineFlag": "-r", "Value": "mh_object"},
                 ],
+            },
+            "LD_OPTIMIZATION_LEVEL": {
+                "CommandLinePrefixFlag": "-O",
+                "DefaultValue": "com_apple_pbx_linkers_ld__LD_OPTIMIZATION_LEVEL__DefaultValue",
+                "Type": "String",
+            },
+            "LD_SUPPRESS_WARNINGS": {
+                "CommandLineFlag": "-w",
+                "DefaultValue": "com_apple_pbx_linkers_ld__LD_SUPPRESS_WARNINGS__DefaultValue",
+                "Type": "Boolean",
             },
             "LIBRARY_SEARCH_PATHS": {
                 "CommandLinePrefixFlag": "-L",
@@ -2208,6 +2268,11 @@ SETTINGS = {
                 "Type": "Boolean",
             },
             "INIT_ROUTINE": {"CommandLineFlag": "-init", "Type": "String"},
+            "LD_EXPORT_SYMBOLS": {
+                "CommandLineArgs": {"NO": ["-Xlinker", "-no_exported_symbols"], "YES": []},
+                "DefaultValue": "com_apple_pbx_linkers_ld__LD_EXPORT_SYMBOLS__DefaultValue",
+                "Type": "Boolean",
+            },
             "EXPORTED_SYMBOLS_FILE": {
                 "CommandLineFlag": "-exported_symbols_list",
                 "Condition": "com_apple_pbx_linkers_ld__EXPORTED_SYMBOLS_FILE__Condition",
@@ -2276,16 +2341,6 @@ SETTINGS = {
                 "CommandLineArgs": {"NO": ["-nostdlib"]},
                 "DefaultValue": "com_apple_pbx_linkers_ld__LINK_WITH_STANDARD_LIBRARIES__DefaultValue",
                 "Type": "Boolean",
-            },
-            "LD_DEPLOYMENT_TARGET": {
-                "CommandLineArgs": {
-                    "": [],
-                    "<<otherwise>>": ["-$(DEPLOYMENT_TARGET_CLANG_FLAG_NAME)=$(value)"],
-                },
-                "Condition": "com_apple_pbx_linkers_ld__LD_DEPLOYMENT_TARGET__Condition",
-                "DefaultValue": "com_apple_pbx_linkers_ld__LD_DEPLOYMENT_TARGET__DefaultValue",
-                "SetValueInEnvironmentVariable": "$(DEPLOYMENT_TARGET_CLANG_ENV_NAME)",
-                "Type": "String",
             },
             "KEEP_PRIVATE_EXTERNS": {
                 "CommandLineFlag": "-keep_private_externs",
@@ -2360,7 +2415,14 @@ SETTINGS = {
                 "Type": "Boolean",
             },
             "LD_BITCODE_GENERATION_MODE": {
-                "Architectures": ["arm64e", "arm64", "armv7", "armv7s", "armv7k"],
+                "Architectures": [
+                    "arm64e",
+                    "arm64",
+                    "arm64_32",
+                    "armv7",
+                    "armv7s",
+                    "armv7k",
+                ],
                 "CommandLineArgs": {
                     "bitcode": ["-fembed-bitcode"],
                     "marker": ["-fembed-bitcode-marker"],
@@ -2371,21 +2433,28 @@ SETTINGS = {
                 "Values": ["marker", "bitcode"],
             },
             "LD_VERIFY_BITCODE": {
-                "Architectures": ["arm64e", "arm64", "armv7", "armv7s", "armv7k"],
+                "Architectures": ["arm64e", "arm64", "arm64_32", "armv7", "armv7s", "armv7k"],
                 "CommandLineArgs": {"NO": [], "YES": ["-Xlinker", "-bitcode_verify"]},
                 "Condition": "com_apple_pbx_linkers_ld__LD_VERIFY_BITCODE__Condition",
                 "DefaultValue": "com_apple_pbx_linkers_ld__LD_VERIFY_BITCODE__DefaultValue",
                 "Type": "Boolean",
             },
             "LD_HIDE_BITCODE_SYMBOLS": {
-                "Architectures": ["arm64", "arm64e", "armv7", "armv7s", "armv7k"],
+                "Architectures": ["arm64", "arm64e", "arm64_32", "armv7", "armv7s", "armv7k"],
                 "CommandLineArgs": {"NO": [], "YES": ["-Xlinker", "-bitcode_hide_symbols"]},
                 "Condition": "com_apple_pbx_linkers_ld__LD_HIDE_BITCODE_SYMBOLS__Condition",
                 "DefaultValue": "com_apple_pbx_linkers_ld__LD_HIDE_BITCODE_SYMBOLS__DefaultValue",
                 "Type": "Boolean",
             },
             "LD_GENERATE_BITCODE_SYMBOL_MAP": {
-                "Architectures": ["arm64", "arm64e", "armv7", "armv7s", "armv7k"],
+                "Architectures": [
+                    "arm64",
+                    "arm64e",
+                    "arm64_32",
+                    "armv7",
+                    "armv7s",
+                    "armv7k",
+                ],
                 "CommandLineArgs": {
                     "NO": [],
                     "YES": [
@@ -2400,7 +2469,7 @@ SETTINGS = {
                 "Type": "Boolean",
             },
             "LD_THREAD_SANITIZER": {
-                "Architectures": ["x86_64", "arm64", "arm64e"],
+                "Architectures": ["x86_64", "x86_64h", "arm64", "arm64e"],
                 "CommandLineArgs": {"NO": [], "YES": ["-fsanitize=thread"]},
                 "DefaultValue": "com_apple_pbx_linkers_ld__LD_THREAD_SANITIZER__DefaultValue",
                 "Type": "Boolean",
@@ -2441,6 +2510,16 @@ SETTINGS = {
                 "DefaultValue": "com_apple_pbx_linkers_ld__LD_DYLIB_ALLOWABLE_CLIENTS__DefaultValue",
                 "Type": "StringList",
             },
+            "LD_MAKE_MERGEABLE": {
+                "CommandLineArgs": {"NO": [], "YES": ["-Xlinker", "-make_mergeable"]},
+                "DefaultValue": "com_apple_pbx_linkers_ld__LD_MAKE_MERGEABLE__DefaultValue",
+                "Type": "Boolean",
+            },
+            "LD_ENTRY_POINT": {
+                "CommandLineArgs": {"": [], "<<otherwise>>": ["-e", "$(value)"]},
+                "Condition": "com_apple_pbx_linkers_ld__LD_ENTRY_POINT__Condition",
+                "Type": "String",
+            },
             "AdditionalCommandLineArguments": {"CommandLinePrefixFlag": "", "Type": "StringList"},
             "ALL_OTHER_LDFLAGS": {
                 "CommandLinePrefixFlag": "",
@@ -2467,7 +2546,7 @@ SETTINGS = {
     },
     "com.apple.xcode.tools.ibtool.compiler": {
         "Class": "XCCompilerSpecificationIbtool",
-        "CommandLine": "ibtool [options] [special-args] --output-format human-readable-text --compile " +
+        "CommandLine": "$(IBC_EXEC) [options] [special-args] --output-format human-readable-text --compile " +
                        "$(ProductResourcesDir)/$(InputFileBase).nib $(InputFile)",
         "CommandOutputParser": [
             ["^([^:]*):([^:]*): warning: (.*)$", "emit-warning"],
@@ -2495,6 +2574,10 @@ SETTINGS = {
         "MightNotEmitAllOutputs": "YES",
         "Name": "Interface Builder XIB Compiler",
         "Options": {
+            "IBC_EXEC": {
+                "DefaultValue": "com_apple_xcode_tools_ibtool_compiler__IBC_EXEC__DefaultValue",
+                "Type": "String",
+            },
             "IBC_FLATTEN_NIBS": {
                 "Category": "IBC_COMPILER_OPTIONS",
                 "CommandLineArgs": {"NO": ["--flatten", "NO"], "YES": []},
@@ -2580,6 +2663,10 @@ SETTINGS = {
                 "DefaultValue": "com_apple_xcode_tools_ibtool_compiler__IBC_COMPILER_USE_NIBKEYEDARCHIVER_FOR_MACOS__DefaultValue",
                 "Type": "Boolean",
             },
+            "IBC_COMPILATION_MODE_FOR_IOS": {
+                "CommandLineFlag": "--compilation-mode-for-ios",
+                "Type": "String",
+            },
         },
         "Outputs": [
             "$(ProductResourcesDir)/$(InputFileBase).nib",
@@ -2621,7 +2708,6 @@ SETTINGS = {
                 "Type": "Boolean",
             },
             "SWIFT_ENABLE_INCREMENTAL_COMPILATION": {
-                "CommandLineArgs": {"NO": [], "YES": ["-incremental"]},
                 "DefaultValue": "com_apple_xcode_tools_swift_compiler__SWIFT_ENABLE_INCREMENTAL_COMPILATION__DefaultValue",
                 "Type": "Boolean",
             },
@@ -2672,6 +2758,11 @@ SETTINGS = {
                 "DefaultValue": "com_apple_xcode_tools_swift_compiler__SWIFT_MODULE_NAME__DefaultValue",
                 "Type": "String",
             },
+            "SWIFT_MODULE_ALIASES": {
+                "CommandLineFlag": "-module-alias",
+                "DefaultValue": "com_apple_xcode_tools_swift_compiler__SWIFT_MODULE_ALIASES__DefaultValue",
+                "Type": "StringList",
+            },
             "SWIFT_OBJC_BRIDGING_HEADER": {
                 "Category": "General",
                 "DefaultValue": "com_apple_xcode_tools_swift_compiler__SWIFT_OBJC_BRIDGING_HEADER__DefaultValue",
@@ -2685,20 +2776,28 @@ SETTINGS = {
                 "DefaultValue": "com_apple_xcode_tools_swift_compiler__SWIFT_OBJC_INTERFACE_HEADER_NAME__DefaultValue",
                 "Description": "Name to use for the header that is " +
                                "generated by the Swift compiler for use " +
-                               "in `#import` statements in Objective-C.",
-                "DisplayName": "Objective-C Generated Interface Header " +
-                               "Name",
+                               "in `#import` statements in Objective-C or " +
+                               "C++.",
+                "DisplayName": "Generated Header Name",
                 "Type": "String",
             },
             "SWIFT_INSTALL_OBJC_HEADER": {
                 "Category": "General",
                 "DefaultValue": "com_apple_xcode_tools_swift_compiler__SWIFT_INSTALL_OBJC_HEADER__DefaultValue",
-                "Description": "For frameworks, install the Objective-C " +
-                               "compatibility header describing bridged Swift " +
-                               "classes into the `PUBLIC_HEADERS_FOLDER_PATH` so " +
-                               "they may be accessed from Objective-C code using " +
-                               "the framework. Defaults to `YES`.",
-                "DisplayName": "Install Objective-C Compatibility Header",
+                "Description": "For frameworks, install the C++/Objective-C " +
+                               "generated header describing bridged Swift types " +
+                               "into the `PUBLIC_HEADERS_FOLDER_PATH` so they " +
+                               "may be accessed from Objective-C or C++ code " +
+                               "using the framework. Defaults to `YES`.",
+                "DisplayName": "Install Generated Header",
+                "Type": "Boolean",
+            },
+            "SWIFT_INSTALL_MODULE": {
+                "Category": "General",
+                "DefaultValue": "com_apple_xcode_tools_swift_compiler__SWIFT_INSTALL_MODULE__DefaultValue",
+                "Description": "For frameworks, install the Swift module so it can be " +
+                               "accessed from Swift code using the framework.",
+                "DisplayName": "Install Swift Module",
                 "Type": "Boolean",
             },
             "SWIFT_OPTIMIZATION_LEVEL": {
@@ -2728,11 +2827,6 @@ SETTINGS = {
                 "Values": ["singlefile", "wholemodule"],
             },
             "SWIFT_ENABLE_BATCH_MODE": {
-                "CommandLineArgs": {
-                    "NO": "-disable-batch-mode",
-                    "YES": "-enable-batch-mode",
-                },
-                "Condition": "com_apple_xcode_tools_swift_compiler__SWIFT_ENABLE_BATCH_MODE__Condition",
                 "DefaultValue": "com_apple_xcode_tools_swift_compiler__SWIFT_ENABLE_BATCH_MODE__DefaultValue",
                 "Type": "Boolean",
             },
@@ -2779,21 +2873,6 @@ SETTINGS = {
                 "DefaultValue": "com_apple_xcode_tools_swift_compiler____SWIFT_ENFORCE_EXCLUSIVE_ACCESS_DEBUG_ENFORCEMENT_DEBUG__DefaultValue",
                 "Type": "Boolean",
             },
-            "SWIFT_OPTIMIZE_OBJECT_LIFETIME": {
-                "Category": "Code Generation",
-                "CommandLineArgs": {
-                    "NO": [],
-                    "YES": [
-                        "-Xfrontend",
-                        "-enable-copy-propagation",
-                    ],
-                },
-                "DefaultValue": "com_apple_xcode_tools_swift_compiler__SWIFT_OPTIMIZE_OBJECT_LIFETIME__DefaultValue",
-                "Description": "Enables aggressive ARC optimization that " +
-                               "shortens object lifetimes",
-                "DisplayName": "Optimize Object Lifetimes",
-                "Type": "Boolean",
-            },
             "SWIFT_STDLIB": {
                 "DefaultValue": "com_apple_xcode_tools_swift_compiler__SWIFT_STDLIB__DefaultValue",
                 "Type": "String",
@@ -2807,6 +2886,14 @@ SETTINGS = {
                 "Type": "PathList",
             },
             "FRAMEWORK_SEARCH_PATHS": {"FlattenRecursiveSearchPathsInValue": "Yes", "Type": "PathList"},
+            "SWIFT_PACKAGE_NAME": {
+                "Category": "General",
+                "Condition": "com_apple_xcode_tools_swift_compiler__SWIFT_PACKAGE_NAME__Condition",
+                "Description": "An identifier that allows grouping of modules with " +
+                               "access to symbols with a package access modifier.",
+                "DisplayName": "Package Access Identifier",
+                "Type": "String",
+            },
             "SWIFT_RESPONSE_FILE_PATH": {
                 "CommandLineArgs": {"": [], "<<otherwise>>": "@$(value)"},
                 "DefaultValue": "com_apple_xcode_tools_swift_compiler__SWIFT_RESPONSE_FILE_PATH__DefaultValue",
@@ -2850,16 +2937,75 @@ SETTINGS = {
                 "Basic": "YES",
                 "Category": "Language",
                 "DefaultValue": "com_apple_xcode_tools_swift_compiler__SWIFT_VERSION__DefaultValue",
-                "Description": "",
+                "Description": "The language version used to compile the target's Swift " +
+                               "code.",
                 "DisplayName": "Swift Language Version",
                 "Type": "String",
                 "UIType": "swiftversion",
+            },
+            "SWIFT_ENABLE_BARE_SLASH_REGEX": {
+                "Category": "Language",
+                "CommandLineArgs": {
+                    "NO": [],
+                    "YES": ["-enable-bare-slash-regex"],
+                },
+                "DefaultValue": "com_apple_xcode_tools_swift_compiler__SWIFT_ENABLE_BARE_SLASH_REGEX__DefaultValue",
+                "Description": "Enable the use of forward slash " +
+                               "regular-expression literal syntax " +
+                               "(-enable-bare-slash-regex)",
+                "DisplayName": "Enable Bare Slash Regex Literals",
+                "Type": "Boolean",
+            },
+            "SWIFT_ENABLE_EMIT_CONST_VALUES": {
+                "Category": "Language",
+                "DefaultValue": "com_apple_xcode_tools_swift_compiler__SWIFT_ENABLE_EMIT_CONST_VALUES__DefaultValue",
+                "Description": "Emit the extracted compile-time known " +
+                               "values from the Swift compiler " +
+                               "(-emit-const-values)",
+                "DisplayName": "Emit Swift const values",
+                "Type": "Boolean",
+            },
+            "SWIFT_EMIT_CONST_VALUE_PROTOCOLS": {
+                "DefaultValue": "com_apple_xcode_tools_swift_compiler__SWIFT_EMIT_CONST_VALUE_PROTOCOLS__DefaultValue",
+                "Description": "A list of protocol names whose " +
+                               "conformances the Swift compiler is to " +
+                               "emit compile-time-known values for.",
+                "DisplayName": "Const value emission protocol list",
+                "Type": "StringList",
+            },
+            "SWIFT_STRICT_CONCURRENCY": {
+                "Category": "Language",
+                "CommandLineArgs": {
+                    "<<otherwise>>": ["-strict-concurrency=$(value)"],
+                    "minimal": [],
+                },
+                "DefaultValue": "com_apple_xcode_tools_swift_compiler__SWIFT_STRICT_CONCURRENCY__DefaultValue",
+                "DisplayName": "Strict Concurrency Checking",
+                "Type": "Enumeration",
+                "Values": ["minimal", "targeted", "complete"],
+            },
+            "SWIFT_OBJC_INTEROP_MODE": {
+                "Category": "Language",
+                "CommandLineArgs": {
+                    "objc": "",
+                    "objcxx": "-cxx-interoperability-mode=default",
+                },
+                "DefaultValue": "com_apple_xcode_tools_swift_compiler__SWIFT_OBJC_INTEROP_MODE__DefaultValue",
+                "Description": "Determines whether Swift can interoperate with C++ " +
+                               "in addition to Objective-C.",
+                "DisplayName": "C++ and Objective-C Interoperability",
+                "Type": "Enumeration",
+                "Values": ["objcxx", "objc"],
             },
             "GCC_GENERATE_DEBUGGING_SYMBOLS": {
                 "CommandLineArgs": {"NO": [], "YES": ["-g"]},
                 "Type": "Boolean",
             },
             "CLANG_MODULE_CACHE_PATH": {"CommandLineFlag": "-module-cache-path", "Type": "Path"},
+            "SWIFT_VALIDATE_CLANG_MODULES_ONCE_PER_BUILD_SESSION": {
+                "DefaultValue": "com_apple_xcode_tools_swift_compiler__SWIFT_VALIDATE_CLANG_MODULES_ONCE_PER_BUILD_SESSION__DefaultValue",
+                "Type": "Boolean",
+            },
             "SWIFT_SERIALIZE_DEBUGGING_OPTIONS": {
                 "CommandLineArgs": {
                     "NO": [
@@ -2901,6 +3047,7 @@ SETTINGS = {
                         "-profile-generate",
                     ],
                 },
+                "Condition": "com_apple_xcode_tools_swift_compiler__CLANG_COVERAGE_MAPPING__Condition",
                 "DefaultValue": "com_apple_xcode_tools_swift_compiler__CLANG_COVERAGE_MAPPING__DefaultValue",
                 "Type": "Boolean",
             },
@@ -2964,7 +3111,7 @@ SETTINGS = {
                 "Type": "Boolean",
             },
             "SWIFT_THREAD_SANITIZER": {
-                "Architectures": ["x86_64", "arm64", "arm64e"],
+                "Architectures": ["x86_64", "x86_64h", "arm64", "arm64e"],
                 "CommandLineArgs": {"NO": [], "YES": ["-sanitize=thread"]},
                 "DefaultValue": "com_apple_xcode_tools_swift_compiler__SWIFT_THREAD_SANITIZER__DefaultValue",
                 "Type": "Boolean",
@@ -2976,7 +3123,7 @@ SETTINGS = {
             },
             "SWIFT_SUPPRESS_WARNINGS": {
                 "Category": "Warnings Policies",
-                "CommandLineArgs": {"NO": [], "YES": ["-suppress-warnings"]},
+                "CommandLineFlag": "-suppress-warnings",
                 "DefaultValue": "com_apple_xcode_tools_swift_compiler__SWIFT_SUPPRESS_WARNINGS__DefaultValue",
                 "Description": "Don't emit any warnings.",
                 "DisplayName": "Suppress Warnings",
@@ -3020,6 +3167,49 @@ SETTINGS = {
                 },
                 "DefaultValue": "com_apple_xcode_tools_swift_compiler__SWIFT_ENABLE_LIBRARY_EVOLUTION__DefaultValue",
                 "Type": "Boolean",
+            },
+            "SWIFT_ENABLE_OPAQUE_TYPE_ERASURE": {
+                "CommandLineArgs": {
+                    "NO": [],
+                    "YES": [
+                        "-Xfrontend",
+                        "-enable-experimental-opaque-type-erasure",
+                    ],
+                },
+                "Condition": "com_apple_xcode_tools_swift_compiler__SWIFT_ENABLE_OPAQUE_TYPE_ERASURE__Condition",
+                "DefaultValue": "com_apple_xcode_tools_swift_compiler__SWIFT_ENABLE_OPAQUE_TYPE_ERASURE__DefaultValue",
+                "Type": "Boolean",
+            },
+            "SWIFT_CLANG_CXX_LANGUAGE_STANDARD": {
+                "CommandLineArgs": {
+                    "<<otherwise>>": [],
+                    "objcxx-c++17": [
+                        "-Xcc",
+                        "-std=$(CLANG_CXX_LANGUAGE_STANDARD)",
+                    ],
+                    "objcxx-c++20": [
+                        "-Xcc",
+                        "-std=$(CLANG_CXX_LANGUAGE_STANDARD)",
+                    ],
+                    "objcxx-c++23": [
+                        "-Xcc",
+                        "-std=c++2b",
+                    ],
+                    "objcxx-gnu++17": [
+                        "-Xcc",
+                        "-std=$(CLANG_CXX_LANGUAGE_STANDARD)",
+                    ],
+                    "objcxx-gnu++20": [
+                        "-Xcc",
+                        "-std=$(CLANG_CXX_LANGUAGE_STANDARD)",
+                    ],
+                    "objcxx-gnu++23": [
+                        "-Xcc",
+                        "-std=gnu++2b",
+                    ],
+                },
+                "DefaultValue": "com_apple_xcode_tools_swift_compiler__SWIFT_CLANG_CXX_LANGUAGE_STANDARD__DefaultValue",
+                "Type": "String",
             },
         },
         "ProgressDescription": "Compiling Swift source files",

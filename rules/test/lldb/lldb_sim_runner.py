@@ -8,9 +8,6 @@ import logging
 import time
 import threading
 import traceback
-import tempfile
-import shutil
-import json
 import contextlib
 
 logging.basicConfig(
@@ -174,26 +171,11 @@ class TestContext():
     def __init__(self, pid, app_name, test_root):
         self.app_name = app_name
         self.test_root = test_root
-
         self.status = None
         self.pid = None
         self.udid = None
-
-        # Bazel sends the MacOS SDK for py interpreter
-        if "SDKROOT" in os.environ:
-            self.developer_dir = os.path.dirname(os.path.dirname(
-                os.path.dirname(os.path.dirname(os.path.dirname(os.environ["SDKROOT"])))))
-        else:
-            xcode_select_result = subprocess.run(["xcode-select", "-p"],
-                                                 encoding="utf-8",
-                                                 check=True,
-                                                 stdout=subprocess.PIPE)
-
-            self.developer_dir = xcode_select_result.stdout.rstrip()
-        os.environ["DEVELOPER_DIR"] = self.developer_dir
-        self.simctl_path = os.path.join(
-            self.developer_dir, "usr", "bin", "simctl")
-
+        self.simctl_path = subprocess.run(
+            ["xcrun", "-f", "simctl"], encoding="utf-8", check=True, stdout=subprocess.PIPE).stdout.rstrip()
     def SetStartedAppPid(self, app_pid):
         self.pid = app_pid
 
@@ -209,8 +191,7 @@ class TestContext():
     def Fail(self):
         traceback.print_exc()
         logger.error("FAIL")
-        with ctxlock:
-            self.status = -1
+        self.status = -1
 
     # Returns None for in progress, -1 fail, 1 pass
     def GetCompletionStatus(self):

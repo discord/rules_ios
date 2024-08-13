@@ -183,19 +183,19 @@ def xcconfig_unit_test_suite():
                 expected = {"objc_copts": ["-D'DISPLAY_VERSION=1.0.0-beta.1'", "-D'SDK_NAME=WHY WOULD YOU ADD SPACES'"]},
             ),
             assert_xcconfig(
-                name = "conditioned_option",  # The condition is on CLANG_UNDEFINED_BEHAVIOR_SANITIZER, which is unspecified
-                xcconfig = {"CLANG_UNDEFINED_BEHAVIOR_SANITIZER_INTEGER": "YES"},
+                name = "conditioned_option",  # The condition is on `$(GCC_OPTIMIZATION_LEVEL) == '0'`, which is unspecified
+                xcconfig = {"LD_DONT_RUN_DEDUPLICATION": "YES"},
                 expected = {},
             ),
             assert_xcconfig(
-                name = "conditioned_option_yes",
-                xcconfig = {"CLANG_UNDEFINED_BEHAVIOR_SANITIZER_INTEGER": "YES", "CLANG_UNDEFINED_BEHAVIOR_SANITIZER": "YES"},
-                expected = {"linkopts": ["-fsanitize=undefined"], "objc_copts": ["-fsanitize=undefined", "-fno-sanitize=enum,return,float-divide-by-zero,function,vptr", "-fsanitize=integer"]},
+                name = "conditioned_option_enabled",
+                xcconfig = {"LD_DONT_RUN_DEDUPLICATION": "YES", "GCC_OPTIMIZATION_LEVEL": "0"},
+                expected = {"linkopts": ["-O'0'", "-Wl,-no_deduplicate"]},
             ),
             assert_xcconfig(
-                name = "conditioned_option_no",
-                xcconfig = {"CLANG_UNDEFINED_BEHAVIOR_SANITIZER_INTEGER": "YES", "CLANG_UNDEFINED_BEHAVIOR_SANITIZER": "NO"},
-                expected = {},
+                name = "conditioned_option_disable",
+                xcconfig = {"LD_DONT_RUN_DEDUPLICATION": "YES", "GCC_OPTIMIZATION_LEVEL": "1"},
+                expected = {"linkopts": ["-O'1'"]},
             ),
             assert_xcconfig(
                 name = "product_module_name",
@@ -205,7 +205,7 @@ def xcconfig_unit_test_suite():
             assert_xcconfig(
                 name = "optimization_level_0",
                 xcconfig = {"GCC_OPTIMIZATION_LEVEL": "0"},
-                expected = {"linkopts": ["-Wl,-no_deduplicate"]},
+                expected = {"linkopts": ["-O'0'", "-Wl,-no_deduplicate"]},
             ),
             assert_xcconfig(
                 name = "xlinker_to_wl",

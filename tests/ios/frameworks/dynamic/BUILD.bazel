@@ -7,11 +7,28 @@ ios_application(
     name = "App",
     srcs = ["App/main.m"],
     bundle_id = "com.example.app",
-    minimum_os_version = "10.0",
+    minimum_os_version = "12.0",
     visibility = ["//visibility:public"],
     # This should automatically bake in a,b
     deps = [
         "//tests/ios/frameworks/dynamic/a",
+        "//tests/ios/frameworks/dynamic/a:aWithResourceBundles",
+    ],
+)
+
+ios_application(
+    name = "AppWithFrameworks",
+    srcs = ["App/main.m"],
+    bundle_id = "com.example.app",
+    frameworks = [
+        "//tests/ios/frameworks/dynamic/a",
+    ],
+    minimum_os_version = "12.0",
+    visibility = ["//visibility:public"],
+    # This should automatically bake in a,b
+    deps = [
+        "//tests/ios/frameworks/dynamic/a",
+        "//tests/ios/frameworks/dynamic/a:aWithResourceBundles",
     ],
 )
 
@@ -23,7 +40,7 @@ ios_application(
     extensions = [
         "//tests/ios/extensions:ExampleExtensionWithDylibs",
     ],
-    minimum_os_version = "10.0",
+    minimum_os_version = "12.0",
     visibility = ["//visibility:public"],
     # This should automatically bake in a,b
     deps = [
@@ -35,7 +52,6 @@ apple_xcframework(
     name = "iOSSwiftXCFramework",
     bundle_id = "com.google.example",
     bundle_name = "c",
-    framework_type = ["dynamic"],
     infoplists = [
         "Info.plist",
     ],
@@ -70,7 +86,7 @@ ios_unit_test(
     frameworks = [
         "//tests/ios/frameworks/dynamic/a",
     ],
-    minimum_os_version = "10.0",
+    minimum_os_version = "12.0",
     test_host = ":App",
     deps = [
         "//tests/ios/frameworks/dynamic/a",

@@ -29,6 +29,8 @@ _PRODUCT_SPECIFIER_LENGTH = len("com.apple.product-type.")
 
 _IGNORE_AS_TARGET_TAG = "xcodeproj-ignore-as-target"
 
+_BAZEL_DIAGNOSTICS_DIR = "$BUILD_DIR/../../bazel-xcode-diagnostics/"
+
 def _dir(o):
     return [
         x
@@ -125,6 +127,13 @@ def _xcodeproj_aspect_collect_swift_copts(deps, ctx):
     copts = None
     if ctx.rule.kind == "swift_library":
         copts = _make_swift_copts(deps)
+
+        # Ensures `-import-underlying-module` gets into the generated Xcode project if applied,
+        # otherwise indexing might fail in mixed modules
+        # https://github.com/bazel-ios/rules_ios/blob/883cc859daffb1f02bd0e153fca39177d2fa7eb4/rules/library.bzl#L923
+        if hasattr(ctx.rule.attr, "copts"):
+            if "-import-underlying-module" in ctx.rule.attr.copts:
+                copts += ["-import-underlying-module"]
     else:
         for dep in deps:
             if _SrcsInfo in dep:
@@ -233,6 +242,8 @@ def _xcodeproj_aspect_impl(target, ctx):
     bazel_bin_subdir = "%s/%s" % (target.label.workspace_root, target.label.package)
 
     if AppleBundleInfo in target:
+        extensions = getattr(ctx.rule.attr, "extensions", [])
+
         swift_objc_header_path = None
         if SwiftInfo in target:
             for h in getattr(target[apple_common.Objc], "direct_headers", []):
@@ -255,12 +266,6 @@ def _xcodeproj_aspect_impl(target, ctx):
             if test_host_target:
                 test_host_appname = test_host_target[_TargetInfo].direct_targets[0].name
 
-        # Collect any extension names associated with this bundle. Schemes are then generated that build both.
-        application_extension_names = []
-        application_extensions = getattr(ctx.rule.attr, "extensions", [])
-        if application_extensions:
-            application_extension_names = [extension[AppleBundleInfo].bundle_name for extension in application_extensions]
-
         framework_includes = depset([], transitive = _get_attr_values_for_name(deps, _SrcsInfo, "framework_includes"))
         info = struct(
             name = bundle_info.bundle_name,
@@ -280,7 +285,7 @@ def _xcodeproj_aspect_impl(target, ctx):
             platform_type = bundle_info.platform_type,
             minimum_os_version = bundle_info.minimum_os_version,
             test_host_appname = test_host_appname,
-            extension_names = depset(application_extension_names),
+            extensions = depset(extensions),
             env_vars = env_vars,
             swift_objc_header_path = swift_objc_header_path,
             swift_module_paths = depset([], transitive = _get_attr_values_for_name(deps, _SrcsInfo, "swift_module_paths")),
@@ -315,8 +320,16 @@ def _xcodeproj_aspect_impl(target, ctx):
             transitive_targets.append(info)
 
         if test_host_target:
-            # Add the test_host_target to the targets to be added to the xcode project
-            test_host_direct_targets = test_host_target[_TargetInfo].direct_targets
+            test_host_direct_targets = []
+
+            for target in test_host_target[_TargetInfo].direct_targets:
+                # Add the test_host_target to the targets to be added to the xcode project
+                test_host_direct_targets.extend([target])
+
+                # Add the test_host_target's extensions to the targets to be added to the xcode project
+                for extension in target.extensions.to_list():
+                    test_host_direct_targets.extend(extension[_TargetInfo].direct_targets)
+
             direct_targets.extend(test_host_direct_targets)
             transitive_targets.extend(test_host_direct_targets)
 
@@ -360,8 +373,8 @@ def _xcodeproj_aspect_impl(target, ctx):
                 swift_defines = depset([], transitive = swift_defines),
                 direct_srcs = srcs,
                 hmap_paths = depset(hmap_paths),
-                swift_copts = depset(direct = swift_copts),
-                objc_copts = depset(direct = objc_copts),
+                swift_copts = depset(direct = swift_copts, transitive = _get_attr_values_for_name(deps, _SrcsInfo, "swift_copts")),
+                objc_copts = depset(direct = objc_copts, transitive = _get_attr_values_for_name(deps, _SrcsInfo, "objc_copts")),
                 swift_module_paths = depset(swift_module_paths, transitive = _get_attr_values_for_name(deps, _SrcsInfo, "swift_module_paths")),
             ),
         )
@@ -726,15 +739,16 @@ _BUILD_WITH_BAZEL_SCRIPT = """
 set -euxo pipefail
 cd $BAZEL_WORKSPACE_ROOT
 
-export BAZEL_DIAGNOSTICS_DIR="$BUILD_DIR/../../bazel-xcode-diagnostics/"
+export BAZEL_DIAGNOSTICS_DIR="{BAZEL_DIAGNOSTICS_DIR}"
 mkdir -p $BAZEL_DIAGNOSTICS_DIR
 export DATE_SUFFIX="$(date +%Y%m%d.%H%M%S%L)"
 export BAZEL_BUILD_EVENT_TEXT_FILENAME="$BAZEL_DIAGNOSTICS_DIR/build-event-$DATE_SUFFIX.txt"
 export BAZEL_BUILD_EXECUTION_LOG_FILENAME="$BAZEL_DIAGNOSTICS_DIR/build-execution-log-$DATE_SUFFIX.log"
 export BAZEL_PROFILE_FILENAME="$BAZEL_DIAGNOSTICS_DIR/build-profile-$DATE_SUFFIX.log"
+export BAZEL_STARLARK_CPU_PROFILE_FILENAME="$BAZEL_DIAGNOSTICS_DIR/starlark-cpu-profile-$DATE_SUFFIX.log"
 env -u RUBYOPT -u RUBY_HOME -u GEM_HOME $BAZEL_BUILD_EXEC $BAZEL_BUILD_TARGET_LABEL
 $BAZEL_INSTALLER
-"""
+""".format(BAZEL_DIAGNOSTICS_DIR = _BAZEL_DIAGNOSTICS_DIR)
 
 # See https://github.com/yonaskolb/XcodeGen/blob/master/Docs/ProjectSpec.md#scheme
 # on structure of xcodeproj_schemes_by_name[target_info.name]
@@ -790,6 +804,7 @@ def _populate_xcodeproj_targets_and_schemes(ctx, targets, src_dot_dots, all_tran
     """
     xcodeproj_targets_by_name = {}
     xcodeproj_schemes_by_name = {}
+
     for target_info in targets:
         target_name = target_info.name
         product_type = target_info.product_type
@@ -800,7 +815,7 @@ def _populate_xcodeproj_targets_and_schemes(ctx, targets, src_dot_dots, all_tran
             if product_type != existing_type:
                 fail(_CONFLICTING_TARGET_MSG.format(ctx.label, target_name, existing_type, target_info.bazel_build_target_name, target_info.product_type))
 
-        target_macho_type = "staticlib" if product_type == "framework" else "$(inherited)"
+        target_macho_type = "staticlib" if product_type == "framework.static" else "$(inherited)"
         compiled_sources = [{
             "path": paths.join(src_dot_dots, s.short_path),
             "optional": True,
@@ -877,6 +892,18 @@ def _populate_xcodeproj_targets_and_schemes(ctx, targets, src_dot_dots, all_tran
             target_settings["TARGETED_DEVICE_FAMILY"] = target_info.targeted_device_family
 
         pre_build_scripts = []
+
+        if virtualize_frameworks:
+            pre_build_scripts.append({
+                "name": "Xcode 14 indexing workaround",
+                "script": """
+# Xcode 14 workaround to make the indexing invocations pass
+if [ -n "$INDEX_DATA_STORE_DIR" ]; then
+    rm -fr $INDEX_DATA_STORE_DIR/../Build/Products/**/*.framework || true
+fi
+            """,
+            })
+
         if len(ctx.attr.additional_prebuild_script) > 0:
             pre_build_scripts.append({
                 "name": "Additional prebuild script",
@@ -934,10 +961,11 @@ def _populate_xcodeproj_targets_and_schemes(ctx, targets, src_dot_dots, all_tran
         # By putting under run action, test action will just use them automatically
         xcodeproj_schemes_by_name[target_name]["run"] = scheme_action_details
 
-        if target_info.extension_names:
-            for extension in target_info.extension_names.to_list():
-                _create_scheme_for_target(extension, xcodeproj_schemes_by_name)
-                xcodeproj_schemes_by_name[extension]["build"]["targets"][target_name] = ["run", "test", "profile"]
+        if target_info.extensions:
+            for extension in target_info.extensions.to_list():
+                extension_name = extension[AppleBundleInfo].bundle_name
+                _create_scheme_for_target(extension_name, xcodeproj_schemes_by_name)
+                xcodeproj_schemes_by_name[extension_name]["build"]["targets"][target_name] = ["run", "test", "profile"]
 
         scheme_infos = [target[AdditionalSchemeInfo] for target in ctx.attr.additional_scheme_infos]
         build_target_to_scheme_info = {scheme_info.build_target: scheme_info for scheme_info in scheme_infos}
@@ -987,6 +1015,7 @@ def _add_pre_post_actions(target_name, scheme, key, actions, provide_build_setti
     supported_keys = ["preActions", "postActions"]
     if key not in supported_keys:
         fail("Key must be one of %s" % supported_keys)
+
     for action_type in actions:
         if action_type not in scheme:
             break
@@ -1050,9 +1079,12 @@ def _xcodeproj_impl(ctx):
         "BAZEL_INSTALLER": "$BAZEL_INSTALLERS_DIR/%s" % ctx.executable.installer.basename,
         "BAZEL_EXECUTION_LOG_ENABLED": ctx.attr.bazel_execution_log_enabled,
         "BAZEL_PROFILE_ENABLED": ctx.attr.bazel_profile_enabled,
+        "BAZEL_STARLARK_CPU_PROFILE_ENABLED": ctx.attr.bazel_starlark_cpu_profile_enabled,
+        "BAZEL_DIAGNOSTICS_DIR": _BAZEL_DIAGNOSTICS_DIR,
         "BAZEL_CONFIGS": ctx.attr.configs.keys(),
         "BAZEL_ADDITIONAL_BAZEL_BUILD_OPTIONS": " ".join(["{} ".format(opt) for opt in ctx.attr.additional_bazel_build_options]),
         "BAZEL_ADDITIONAL_LLDB_SETTINGS": "\n".join(ctx.attr.additional_lldb_settings),
+        "INDEX_DATA_STORE_DIR": "$(INDEX_DATA_STORE_DIR)",
     })
 
     # Stubbing compiler, linker executables used by xcode so no actual building happening on Xcode side
@@ -1313,6 +1345,7 @@ Additional LLDB settings to be added in each target's .lldbinit configuration fi
         """),
         "bazel_execution_log_enabled": attr.bool(default = False, mandatory = False),
         "bazel_profile_enabled": attr.bool(default = False, mandatory = False),
+        "bazel_starlark_cpu_profile_enabled": attr.bool(default = False, mandatory = False),
         "disable_main_thread_checker": attr.bool(default = False, mandatory = False),
         "force_x86_sim": attr.bool(default = False, mandatory = False),
     },

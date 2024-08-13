@@ -1,17 +1,16 @@
-# We can't create a bzl_library for rules-swift because of its visibility,
-# so circumvent by not using the sandbox
-build --strategy=Stardoc=standalone
+# Enable Bzlmod
+common --enable_bzlmod
 
-# Debugging does not work in sandbox mode. Uncomment these lines to turn off sandboxing.
-# build --genrule_strategy=standalone
-# build --spawn_strategy=standalone
+# Spawn strategy required for some tests
+build --spawn_strategy=standalone
+
+# Setup Xcode configuration for xcodeproj tests
+build --xcode_version_config=//:host_xcodes
+
+build --experimental_strict_conflict_checks
 
 build --verbose_failures # Print the full command line for commands that failed
 build --test_output=errors # Prints log file output to the console on failure
-
-# By default do not build the tests for sources-with-prebuilt-binaries,
-# because it takes quite some time. They will only run on CI
-build --deleted_packages tests/ios/frameworks/sources-with-prebuilt-binaries
 
 # Enable dbg compilation mode in this repo, so we can test xcodeproj-built
 # binaries contain debug symbol tables.
@@ -28,18 +27,67 @@ build --features swift.index_while_building
 # Prevents leaking unexpected binaries via PATH to tests
 build --test_env=PATH=/usr/bin:/bin:/usr/sbin:/sbin
 
-# Enable device deps when the build matches the arm64 simulator
-# Bazel 5 - matches ios_sim_arm64 CPU, Bazel 4 - needs "override" flags
-build --features apple.arm64_simulator_use_device_deps
-
-# Note - tree artifacts needs to be on
-build:lldb_ios_test --spawn_strategy=standalone --apple_platform_type=ios --define=apple.experimental.tree_artifact_outputs=1
-
 # Delete the VM test suite for github
 build --deleted_packages tests/ios/vmd
 
 # Allow for server to start (GitHub actions can timeout)
 startup --local_startup_timeout_secs=240
+
+# - iOS Configuration
+# Required for tests/ios/... targets
+build:ios --apple_platform_type=ios
+
+# - VFS configuration
+# Required for some tests in tests/ios/... targets
+build:vfs --features=apple.virtualize_frameworks
+
+# - iOS lldb test configuration
+build:ios_lldb_test --config=ios
+build:ios_lldb_test --define=apple.experimental.tree_artifact_outputs=1
+
+# - iOS multi arch test configuration
+build:ios_multi_arch_test --config=ios
+build:ios_multi_arch_test --ios_minimum_os=10.2
+# i386 was removed on rules_apple 3.x.x - this test case needs reworking
+# to exemplify fat binaries on the latest version
+build:ios_multi_arch_test --ios_multi_cpus=x86_64
+
+build:remote_cache --bes_backend=grpcs://remote.buildbuddy.io
+build:remote_cache --bes_results_url=https://app.buildbuddy.io/invocation/
+build:remote_cache --experimental_build_event_upload_strategy=local
+build:remote_cache --experimental_remote_cache_compression
+build:remote_cache --experimental_remote_merkle_tree_cache
+build:remote_cache --modify_execution_info=^(BitcodeSymbolsCopy|BundleApp|BundleTreeApp|DsymDwarf|DsymLipo|GenerateAppleSymbolsFile|ObjcBinarySymbolStrip|CppLink|ObjcLink|ProcessAndSign|SignBinary|SwiftArchive|SwiftStdlibCopy)$=+no-remote,^(BundleResources|ImportedDynamicFrameworkProcessor)$=+no-remote-exec
+build:remote_cache --nolegacy_important_outputs
+build:remote_cache --noslim_profile
+build:remote_cache --remote_cache=grpcs://remote.buildbuddy.io
+build:remote_cache --remote_timeout=3600
+
+# By default don't upload local results to remote cache, only CI does this.
+build --noremote_upload_local_results
+build:ci --remote_upload_local_results
+
+# - CI Configuration
+# announce config values
+common:ci --announce_rc
+# enable remote cache
+build:ci --config=remote_cache
+# disable curses control since CI logs are not interactive
+common:ci --curses=no
+# turn off loading message updates
+common:ci --noshow_loading_progress
+# throttle progress updates in CI as they can clutter the logs
+common:ci --show_progress_rate_limit=15.0
+build:ci --progress_report_interval=60
+# enable more verbose logging
+build:ci --verbose_failures
+# ci setup for tests, tend to be more flaky on github actions
+build:ci --jobs=4
+# allow extra time for simulators to boot
+test:ci --test_env=STARTUP_TIMEOUT_SEC=350
+test:ci --test_timeout=1000
+test:ci --local_test_jobs=1
+test:ci --flaky_test_attempts=3
 
 # Load a user.bazelrc
 try-import %workspace%/user.bazelrc

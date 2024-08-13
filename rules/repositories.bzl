@@ -5,9 +5,10 @@ load(
     "http_archive",
     "http_file",
 )
-load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository", "new_git_repository")
-load("//rules/third_party:xchammer_repositories.bzl", "xchammer_dependencies")
-load("//rules/third_party:xcbuildkit_repositories.bzl", xcbuildkit_dependencies = "dependencies")
+load(
+    "@bazel_tools//tools/build_defs/repo:git.bzl",
+    "new_git_repository",
+)
 
 def _maybe(repo_rule, name, **kwargs):
     """Executes the given repository rule if it hasn't been executed already.
@@ -47,41 +48,105 @@ def github_repo(name, project, repo, ref, sha256 = None, **kwargs):
         **kwargs
     )
 
-def rules_ios_dependencies():
-    """Fetches repositories that are dependencies of the `rules_apple` workspace.
+def rules_ios_dependencies(
+        load_bzlmod_dependencies = True):
+    """Fetches repositories that are public dependencies of `rules_ios`.
+
+    Args:
+        load_bzlmod_dependencies: if `True` loads dependencies that are available via bzlmod (set to True when using WORKSPACE, and False when using bzlmod)
     """
-    _maybe(
-        github_repo,
-        name = "build_bazel_rules_swift",
-        project = "bazel-ios",
-        ref = "a25aed4e75893a55c1c98524201451c05f66ab89",
-        repo = "rules_swift",
-        sha256 = "9f13f4be00dfd6a37d9338e49ebbc337445361134a4bcc668658b96fdbdeaae4",
-    )
+
+    if load_bzlmod_dependencies:
+        _rules_ios_bzlmod_dependencies()
+
+    # Non-bzlmod tool dependencies that are used in the rule APIs
+    _rules_ios_tool_dependencies()
+
+    # If legacy project generator is deprecated this can be removed.
+    _rules_ios_legacy_xcodeproj_dependencies()
+
+def rules_ios_dev_dependencies(
+        load_bzlmod_dependencies = True):
+    """
+    Fetches repositories that are development dependencies of `rules_ios`
+
+    Args:
+        load_bzlmod_dependencies: if `True` loads dependencies that are available via bzlmod (set to True when using WORKSPACE, and False when using bzlmod)
+    """
+
+    if load_bzlmod_dependencies:
+        _rules_ios_bzlmod_dev_dependencies()
+
+    _rules_ios_test_dependencies()
+
+def _rules_ios_bzlmod_dependencies():
+    """Fetches repositories that are dependencies of `rules_ios`
+
+    These are only included when using WORKSPACE, when using bzlmod they're loaded in MODULE.bazel
+    """
 
     _maybe(
-        github_repo,
-        name = "build_bazel_rules_apple",
-        ref = "f99c3cb7e472ecd68b81ea8dab97609a4b75db06",
-        project = "bazelbuild",
-        repo = "rules_apple",
-        sha256 = "5e82a98a591efda772a5ee96ed17bcad38338aafeba6055daab04a5d6c13ea50",
-        patches = [
-            "@build_bazel_rules_ios//:patches/build_bazel_rules_apple.patch",
-            "@build_bazel_rules_ios//:patches/build_bazel_rules_apple_filesystem.patch",
-        ],
-        patch_args = ["-p1"],
+        http_archive,
+        name = "build_bazel_rules_swift",
+        sha256 = "bb01097c7c7a1407f8ad49a1a0b1960655cf823c26ad2782d0b7d15b323838e2",
+        url = "https://github.com/bazelbuild/rules_swift/releases/download/1.18.0/rules_swift.1.18.0.tar.gz",
     )
 
     _maybe(
         http_archive,
-        name = "bazel_skylib",
-        urls = [
-            "https://github.com/bazelbuild/bazel-skylib/releases/download/1.1.1/bazel-skylib-1.1.1.tar.gz",
-            "https://mirror.bazel.build/github.com/bazelbuild/bazel-skylib/releases/download/1.1.1/bazel-skylib-1.1.1.tar.gz",
-        ],
-        sha256 = "c6966ec828da198c5d9adbaa94c05e3a1c7f21bd012a0b29ba8ddbccb2c93b0d",
+        name = "build_bazel_rules_apple",
+        sha256 = "b4df908ec14868369021182ab191dbd1f40830c9b300650d5dc389e0b9266c8d",
+        url = "https://github.com/bazelbuild/rules_apple/releases/download/3.5.1/rules_apple.3.5.1.tar.gz",
     )
+    _maybe(
+        http_archive,
+        name = "bazel_skylib",
+        sha256 = "66ffd9315665bfaafc96b52278f57c7e2dd09f5ede279ea6d39b2be471e7e3aa",
+        urls = [
+            "https://mirror.bazel.build/github.com/bazelbuild/bazel-skylib/releases/download/1.4.2/bazel-skylib-1.4.2.tar.gz",
+            "https://github.com/bazelbuild/bazel-skylib/releases/download/1.4.2/bazel-skylib-1.4.2.tar.gz",
+        ],
+    )
+
+    _maybe(
+        http_archive,
+        name = "rules_pkg",
+        urls = [
+            "https://mirror.bazel.build/github.com/bazelbuild/rules_pkg/releases/download/0.9.1/rules_pkg-0.9.1.tar.gz",
+            "https://github.com/bazelbuild/rules_pkg/releases/download/0.9.1/rules_pkg-0.9.1.tar.gz",
+        ],
+        sha256 = "8f9ee2dc10c1ae514ee599a8b42ed99fa262b757058f65ad3c384289ff70c4b8",
+    )
+
+def _rules_ios_bzlmod_dev_dependencies():
+    """
+    Fetches repositories that are development dependencies of `rules_ios` and available via bzlmod.
+
+    These are only included when using WORKSPACE, when using bzlmod they're loaded in MODULE.bazel
+    """
+
+    _maybe(
+        http_archive,
+        name = "buildifier_prebuilt",
+        sha256 = "e46c16180bc49487bfd0f1ffa7345364718c57334fa0b5b67cb5f27eba10f309",
+        strip_prefix = "buildifier-prebuilt-6.1.0",
+        urls = [
+            "http://github.com/keith/buildifier-prebuilt/archive/6.1.0.tar.gz",
+        ],
+    )
+
+    _maybe(
+        http_archive,
+        name = "io_bazel_stardoc",
+        sha256 = "62bd2e60216b7a6fec3ac79341aa201e0956477e7c8f6ccc286f279ad1d96432",
+        urls = [
+            "https://mirror.bazel.build/github.com/bazelbuild/stardoc/releases/download/0.6.2/stardoc-0.6.2.tar.gz",
+            "https://github.com/bazelbuild/stardoc/releases/download/0.6.2/stardoc-0.6.2.tar.gz",
+        ],
+    )
+
+def _rules_ios_legacy_xcodeproj_dependencies():
+    """Fetches the repositories that are dependencies of the legacy xcode project generator"""
 
     _maybe(
         http_archive,
@@ -97,10 +162,20 @@ native_binary(
     visibility = ["//visibility:public"],
 )
 """,
-        canonical_id = "xcodegen-2.18.0-12-g04d6749",
-        sha256 = "3742eee89850cea75367b0f67662a58da5765f66c1be9b4189a59529b4e5099e",
+        canonical_id = "xcodegen-2.19.0",
+        sha256 = "a70a815cdde2f8fd834b9f0605d0a2eb05f2c0a4b424480ab9bb6ef8d48156cf",
         strip_prefix = "xcodegen",
-        urls = ["https://github.com/segiddins/XcodeGen/releases/download/2.18.0-12-g04d6749/xcodegen.zip"],
+        urls = ["https://github.com/bazel-ios/XcodeGen/releases/download/2.19.0/xcodegen.zip"],
+    )
+
+def _rules_ios_tool_dependencies():
+    """Fetches the repositories that are dependencies of `rules_ios`'s development tools."""
+
+    _maybe(
+        http_file,
+        name = "tart",
+        urls = ["https://github.com/bazel-ios/tart/releases/download/0.35.2/tart"],
+        sha256 = "7b9f4f37054483e565c760525b7e9e9097053c361dc16306583bb2981a29a6ec",
     )
 
     _maybe(
@@ -119,38 +194,16 @@ swift_binary(
 )
         """,
     )
-    _maybe(
-        http_archive,
-        name = "rules_pkg",
-        urls = [
-            "https://mirror.bazel.build/github.com/bazelbuild/rules_pkg/releases/download/0.7.0/rules_pkg-0.7.0.tar.gz",
-            "https://github.com/bazelbuild/rules_pkg/releases/download/0.7.0/rules_pkg-0.7.0.tar.gz",
-        ],
-        sha256 = "8a298e832762eda1830597d64fe7db58178aa84cd5926d76d5b744d6558941c2",
-    )
+
+def _rules_ios_test_dependencies():
+    """Fetches the repositories that are dependencies of `rules_ios`'s tests."""
 
     _maybe(
-        http_file,
-        name = "tart",
-        urls = ["https://github.com/cirruslabs/tart/releases/download/0.14.0/tart"],
-        sha256 = "2c61526aa07ade30ab6534b0fdc0a0edeb56ec2084dadee587e53c46e3a8edc3",
+        github_repo,
+        name = "com_github_apple_swiftcollections",
+        build_file = "@//tests/ios/frameworks/external-dependency:BUILD.com_github_apple_swiftcollections",
+        project = "apple",
+        ref = "0.0.3",
+        repo = "swift-collections",
+        sha256 = "e6f36a1f9bb163437b4e9bc8da641a6129f16af7799eb8418c4a35749ceb1ef7",
     )
-
-    if not native.existing_rule("xchammer"):
-        git_repository(
-            name = "xchammer",
-            remote = "https://github.com/bazel-ios/xchammer.git",
-            # XCHammer dev branch: bazel-ios/rules-ios-xchammer
-            commit = "fffd8033bed79e61a908ca1a72acff867a5b5825",
-            shallow_since = "1670600984 -0500",
-        )
-    xchammer_dependencies()
-
-    if not native.existing_rule("xcbuildkit"):
-        git_repository(
-            name = "xcbuildkit",
-            commit = "18a2b0e73d2e0cba759d5b4da24e47af106922d7",
-            remote = "https://github.com/jerrymarino/xcbuildkit.git",
-        )
-
-    xcbuildkit_dependencies()

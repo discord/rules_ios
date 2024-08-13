@@ -1,3 +1,4 @@
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load("//rules:test.bzl", "ios_unit_test")
 
 ios_unit_test(
@@ -7,7 +8,7 @@ ios_unit_test(
         "empty.swift",
     ],
     infoplists = [{"UNHOSTED_KEY_1": True}],
-    minimum_os_version = "11.0",
+    minimum_os_version = "12.0",
 )
 
 ios_unit_test(
@@ -16,7 +17,8 @@ ios_unit_test(
         "empty.m",
         "empty.swift",
     ],
-    minimum_os_version = "10.0",
+    bundle_name = "DefaultHosted_bundle",
+    minimum_os_version = "12.0",
     test_host = True,
     # Adding visibility so the xcodeproject tests can depend on this target
     visibility = ["//visibility:public"],
@@ -29,7 +31,47 @@ ios_unit_test(
         "empty.swift",
     ],
     minimum_os_version = "12.0",
-    test_host = "//rules/test_host_app:iOS-9.3-AppHost",
+    test_host = "//rules/test_host_app:iOS-12.0-AppHost",
+    # Adding visibility so the xcodeproject tests can depend on this target
+    visibility = ["//visibility:public"],
+)
+
+bool_flag(
+    name = "other_test_host",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "use_other_test_host",
+    flag_values = {
+        "//tests/ios/unit-test:other_test_host": "True",
+    },
+)
+
+ios_unit_test(
+    name = "ExplicitHostedWithSelect",
+    srcs = [
+        "empty.m",
+        "empty.swift",
+    ],
+    minimum_os_version = "12.0",
+    test_host = select({
+        "//tests/ios/unit-test:use_other_test_host": "//rules/test_host_app:iOS-12.0-AppHost",
+        "//conditions:default": "//rules/test_host_app:iOS-14.0-AppHost",
+    }),
+    # Adding visibility so the xcodeproject tests can depend on this target
+    visibility = ["//visibility:public"],
+)
+
+ios_unit_test(
+    name = "ExplicitHostedWithAppExtensions",
+    srcs = [
+        "empty.m",
+        "empty.swift",
+    ],
+    minimum_os_version = "12.0",
+    # Intentionally dependent on app with extensions.
+    test_host = "//tests/ios/app:App",
     # Adding visibility so the xcodeproject tests can depend on this target
     visibility = ["//visibility:public"],
 )
@@ -40,7 +82,7 @@ ios_unit_test(
         "empty.m",
         "empty.swift",
     ],
-    minimum_os_version = "11.0",
+    minimum_os_version = "12.0",
     resources = ["resource-file.txt"],
 )
 
@@ -50,7 +92,7 @@ ios_unit_test(
         "empty.m",
         "empty.swift",
     ],
-    minimum_os_version = "10.0",
+    minimum_os_version = "12.0",
     split_name_to_kwargs = {
         "shard_1": {"test_filter": "EmptySwiftTests"},
         "shard_2": {"test_filter": "EmptyTests"},
@@ -68,7 +110,7 @@ ios_unit_test(
         "empty.swift",
     ],
     infoplists = [{"NSPrincipalClass": "TestSuiteObserver"}],
-    minimum_os_version = "11.0",
+    minimum_os_version = "12.0",
 )
 
 ios_unit_test(
@@ -78,5 +120,5 @@ ios_unit_test(
         "empty.swift",
     ],
     features = ["apple.skip_codesign_simulator_bundles"],
-    minimum_os_version = "11.0",
+    minimum_os_version = "12.0",
 )
