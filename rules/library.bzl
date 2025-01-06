@@ -16,6 +16,7 @@ load("//rules/library:resources.bzl", "wrap_resources_in_filegroup")
 load("//rules/library:xcconfig.bzl", "copts_by_build_setting_with_defaults")
 load("//rules:import_middleman.bzl", "import_middleman")
 load("//rules:utils.bzl", "bundle_identifier_for_bundle")
+load("//rules:header_paths.bzl", "header_paths")
 
 PrivateHeadersInfo = provider(
     doc = "Propagates private headers, so they can be accessed if necessary",
@@ -104,13 +105,14 @@ extend_modulemap = rule(
     doc = "Extends a modulemap with a Swift submodule",
 )
 
-def _write_modulemap(name, library_tools, umbrella_header = None, public_headers = [], private_headers = [], module_name = None, framework = False, **kwargs):
+def _write_modulemap(name, library_tools, umbrella_header = None, public_headers = [], private_headers = [], module_name = None, framework = False, system_module = True, **kwargs):
     basename = "{}.modulemap".format(name)
     destination = paths.join(name + "-modulemap", basename)
+    system_module_text = "[system] " if system_module else ""
     if not module_name:
         module_name = name
     content = """\
-module {module_name} {{
+module {module_name} {system_module_text} {{
     umbrella header "{umbrella_header}"
 
     export *
@@ -119,6 +121,7 @@ module {module_name} {{
 """.format(
         module_name = module_name,
         umbrella_header = umbrella_header,
+        system_module_text = system_module_text,
     )
     if framework:
         content = "framework " + content
@@ -135,9 +138,12 @@ def _write_umbrella_header(
         name,
         generate_default_umbrella_header,
         public_headers = [],
-        module_name = None):
+        module_name = None,
+        headers_mapping = {},
+        objc_public_headers = None):
     basename = "{name}-umbrella.h".format(name = name)
     destination = paths.join(name + "-modulemap", basename)
+
     if not module_name:
         module_name = name
 
@@ -163,8 +169,21 @@ def _write_umbrella_header(
 
 """
 
-    for header in public_headers:
-        content += "#import \"{header}\"\n".format(header = paths.basename(header))
+    if objc_public_headers != None:
+        content += "#if defined(__cplusplus)\n"
+
+        for header in public_headers:
+            content += "#import \"{header}\"\n".format(header = header_paths.get_string_mapped_path(header, headers_mapping))
+
+        content += "#else\n"
+
+        for header in objc_public_headers:
+            content += "#import \"{header}\"\n".format(header = header_paths.get_string_mapped_path(header, headers_mapping))
+
+        content += "#endif"
+    else:
+        for header in public_headers:
+            content += "#import \"{header}\"\n".format(header = header_paths.get_string_mapped_path(header, headers_mapping))
 
     content += """
 {extern_keyword} double {module_name}VersionNumber;
@@ -476,6 +495,8 @@ def apple_library(
         xcconfig_by_build_setting = {},
         objc_defines = [],
         swift_defines = [],
+        headers_mapping = {},
+        objc_public_headers = None,
         **kwargs):
     """Create libraries for native source code on Apple platforms.
 
@@ -499,6 +520,13 @@ def apple_library(
                                    the respective bazel build setting is resolved during the analysis phase.
         objc_defines: A list of Objective-C defines to add to the compilation command line. They should be in the form KEY=VALUE or simply KEY and are passed not only to the compiler for this target (as copts are) but also to all objc_ dependers of this target.
         swift_defines: A list of Swift defines to add to the compilation command line. Swift defines do not have values, so strings in this list should be simple identifiers and not KEY=VALUE pairs. (only expections are KEY=1 and KEY=0). These flags are added for the target and every target that depends on it.
+        headers_mapping: A mapping of {str: str}, where the key is a path to a header,
+                         and the value where that header should be placed in hmaps,
+                         umbrella headers, etc.
+        objc_public_headers: If not `None`, then a list of headers from `public_headers`
+                             that are safe for objective c to consume. Anything other
+                             headers in `public_headers` will be gated in the umbrella
+                             header on the __cplusplus macro
         **kwargs: keyword arguments.
 
     Returns:
@@ -599,12 +627,14 @@ def apple_library(
     testonly = kwargs.pop("testonly", False)
     features = kwargs.pop("features", [])
     extension_safe = kwargs.pop("extension_safe", None)
+    system_module = kwargs.pop("system_module", True)
 
     # Set extra linkopt for application extension safety
     if extension_safe:
         linkopts += ["-fapplication-extension"]
         objc_copts += ["-fapplication-extension"]
         swift_copts += ["-application-extension"]
+
 
     # Collect the swift_library related kwargs, these are typically only set when provided to allow
     # for wider compatibility with rule_swift versions.
@@ -839,6 +869,8 @@ def apple_library(
                 generate_default_umbrella_header = generate_default_umbrella_header,
                 public_headers = objc_hdrs,
                 module_name = module_name,
+                headers_mapping = headers_mapping,
+                objc_public_headers = objc_public_headers,
             )
             if umbrella_header:
                 objc_hdrs.append(umbrella_header)
@@ -850,6 +882,7 @@ def apple_library(
                 private_headers = objc_private_hdrs,
                 module_name = module_name,
                 framework = True,
+                system_module = system_module,
                 **kwargs
             )
 
@@ -888,7 +921,12 @@ def apple_library(
 
     if len(objc_hdrs) > 0:
         public_hmap_name = name + "_public_hmap"
+        public_hdrs = objc_hdrs
 
+        public_hdrs_dests = [
+            header_paths.get_string_mapped_path(header, headers_mapping)
+            for header in public_hdrs
+        ]
         # Public hmaps are for vendored static libs to export their header only.
         # Other dependencies' headermaps will be generated by li_ios_framework
         # rules.
@@ -897,20 +935,28 @@ def apple_library(
             namespace = namespace,
             hdrs = objc_hdrs,
             tags = _MANUAL,
+            hdr_dests = public_hdrs_dests,
         )
         private_dep_names.append(public_hmap_name)
-        additional_objc_copts, additional_swift_copts, additional_cc_copts = _append_headermap_copts(public_hmap_name, "-I", additional_objc_copts, additional_swift_copts, additional_cc_copts)
+        additional_objc_copts, additional_swift_copts, additional_cc_copts = _append_headermap_copts(public_hmap_name, "-idirafter", additional_objc_copts, additional_swift_copts, additional_cc_copts)
 
     if len(objc_non_exported_hdrs + objc_private_hdrs) > 0:
         private_hmap_name = name + "_private_hmap"
 
+        private_hdrs = objc_non_exported_hdrs + objc_private_hdrs + objc_hdrs
+        private_hdrs_dests = [
+            header_paths.get_string_mapped_path(header, headers_mapping)
+            for header in private_hdrs
+        ]
+
         headermap(
             name = private_hmap_name,
             hdrs = objc_non_exported_hdrs + objc_private_hdrs,
+            hdr_dests = private_hdrs_dests,
             tags = _MANUAL,
         )
         private_dep_names.append(private_hmap_name)
-        additional_objc_copts, additional_swift_copts, additional_cc_copts = _append_headermap_copts(private_hmap_name, "-I", additional_objc_copts, additional_swift_copts, additional_cc_copts)
+        additional_objc_copts, additional_swift_copts, additional_cc_copts = _append_headermap_copts(private_hmap_name, "-idirafter", additional_objc_copts, additional_swift_copts, additional_cc_copts)
 
     ## END HMAP
 
@@ -931,7 +977,7 @@ def apple_library(
         additional_swift_copts += ["-swift-version", swift_version]
 
     if has_swift_sources:
-        additional_swift_copts += ["-Xcc", "-I."]
+        additional_swift_copts.extend(("-Xcc", "-idirafter."))
         swiftc_inputs = other_inputs + objc_hdrs + objc_private_hdrs
         if module_map:
             # Frameworks find the modulemap file via the framework vfs overlay
@@ -964,7 +1010,11 @@ def apple_library(
                 module_name = module_name,
                 tags = _MANUAL,
             )
+            # NOTE(nmj): Need to make sure that both the extended and the regular
+            #            modulemap are included as inputs, otherwise swiftc compilation
+            #            will fail.
             module_map = "%s.extended.modulemap" % name
+            swiftc_inputs.append(module_map)
 
     # Note: this needs to go here, in order to virtualize the extended module
     framework_vfs_overlay(
@@ -1039,6 +1089,7 @@ def apple_library(
                 name = swift_doublequote_hmap_name,
                 namespace = namespace,
                 hdrs = [],
+                hdr_dests = [],
                 direct_hdr_providers = [swift_libname],
                 tags = _MANUAL,
                 testonly = testonly,
@@ -1052,6 +1103,7 @@ def apple_library(
                 name = swift_angle_bracket_hmap_name,
                 namespace = namespace,
                 hdrs = [],
+                hdr_dests = [],
                 direct_hdr_providers = [swift_libname],
                 tags = _MANUAL,
                 testonly = testonly,
@@ -1060,7 +1112,7 @@ def apple_library(
             additional_objc_copts, additional_swift_copts, additional_cc_copts = _append_headermap_copts(swift_angle_bracket_hmap_name, "-I", additional_objc_copts, additional_swift_copts, additional_cc_copts)
 
     if cpp_sources:
-        additional_cc_copts.append("-I.")
+        additional_cc_copts.append("-idirafter.")
         native.objc_library(
             name = cpp_libname,
             srcs = cpp_sources + objc_private_hdrs + objc_non_exported_hdrs,
@@ -1074,7 +1126,7 @@ def apple_library(
         )
         lib_names.append(cpp_libname)
 
-    additional_objc_copts.append("-I.")
+    additional_objc_copts.append("-idirafter.")
     index_while_building_objc_copts = select({
         "@build_bazel_rules_ios//:use_global_index_store": [
             # Note: this won't work work for remote caching yet. It uses a

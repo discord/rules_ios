@@ -8,9 +8,11 @@ load("//rules:providers.bzl", "AvoidDepsInfo", "FrameworkInfo")
 load("//rules:transition_support.bzl", "transition_support")
 load("//rules:utils.bzl", "is_bazel_7")
 load("//rules/internal:objc_provider_utils.bzl", "objc_provider_utils")
+load("@bazel_skylib//lib:collections.bzl", "collections")
 load("@bazel_skylib//lib:partial.bzl", "partial")
 load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@bazel_tools//tools/cpp:toolchain_utils.bzl", "find_cpp_toolchain", "use_cpp_toolchain")
+load("@bazel_skylib//lib:types.bzl", "types")
 load("@build_bazel_rules_apple//apple/internal:apple_product_type.bzl", "apple_product_type")
 load("@build_bazel_rules_apple//apple/internal:features_support.bzl", "features_support")
 load("@build_bazel_rules_apple//apple/internal:linking_support.bzl", "linking_support")
@@ -31,6 +33,7 @@ load(
     "apple_resource_aspect",
 )
 load("//rules:force_load_direct_deps.bzl", "force_load_direct_deps")
+load("//rules:header_paths.bzl", "header_paths")
 
 _APPLE_FRAMEWORK_PACKAGING_KWARGS = [
     "visibility",
@@ -43,6 +46,30 @@ _APPLE_FRAMEWORK_PACKAGING_KWARGS = [
     "exported_symbols_lists",
 ]
 
+_HEADER_EXTS = {
+    "srcs": (".h", ".hh", ".hpp"),
+    "public_headers": (".inc", ".h", ".hh", ".hpp"),
+    "private_headers": (".inc", ".h", ".hh", ".hpp"),
+}
+
+def _generate_headers_mapping(headers_mapping, kwargs):
+    if types.is_dict(headers_mapping):
+        return headers_mapping
+
+    to_map = []
+    for attr in headers_mapping.attrs:
+        exts = _HEADER_EXTS[attr]
+        to_map += [h for h in kwargs.get(attr, []) if h.endswith(exts)]
+
+    headers = collections.uniq(to_map)
+    if headers_mapping.op == "strip":
+        return header_paths.mapped_without_prefix(headers, headers_mapping.pattern)
+    elif headers_mapping.op == "add":
+        return {h: headers_mapping.pattern + h for h in headers}
+    else:
+        fail("Invalid headers_mapping `{}`".format(headers_mapping))
+
+
 def apple_framework(
         name,
         apple_library = apple_library,
@@ -50,6 +77,7 @@ def apple_framework(
         infoplists_by_build_setting = {},
         xcconfig = {},
         xcconfig_by_build_setting = {},
+        headers_mapping = {},
         **kwargs):
     """Builds and packages an Apple framework.
 
@@ -72,6 +100,18 @@ def apple_framework(
 
                                    If '//conditions:default' is not set the value in 'xcconfig'
                                    is set as default.
+        headers_mapping: Either a dictionary, or the value from add_prefix / strip_prefix.
+
+                         If a dictionary, a mapping of {str: str}, where the key is a
+                         path to a header, and the value where that header should be
+                         placed in Headers, PrivateHeaders, umbrella headers, hmaps, etc.
+
+                         If the result of header_paths.add_prefix, then the attributes
+                         specified will have the prefix appended to the beginning.
+
+                         If the result of header_paths.strip_prefix, then the
+                         attributes specified will have the prefix reoved from the
+                         beginning.
         **kwargs: Arguments passed to the apple_library and apple_framework_packaging rules as appropriate.
     """
     framework_packaging_kwargs = {arg: kwargs.pop(arg) for arg in _APPLE_FRAMEWORK_PACKAGING_KWARGS if arg in kwargs}
@@ -96,11 +136,14 @@ def apple_framework(
 
     testonly = kwargs.pop("testonly", False)
 
+    if headers_mapping:
+        headers_mapping = _generate_headers_mapping(headers_mapping, kwargs)
     library = apple_library(
         name = name,
         testonly = testonly,
         xcconfig = xcconfig,
         xcconfig_by_build_setting = xcconfig_by_build_setting,
+        headers_mapping = headers_mapping,
         **kwargs
     )
 
@@ -155,6 +198,7 @@ def apple_framework(
         testonly = testonly,
         minimum_os_version = minimum_os_version,
         platform_type = platform_type,
+        headers_mapping = headers_mapping,
         **framework_packaging_kwargs
     )
 
@@ -188,35 +232,39 @@ def _find_framework_dir(outputs):
         return prefix + ".framework"
     return None
 
-def _framework_packaging_symlink_headers(ctx, inputs, outputs):
-    inputs_by_basename = {input.basename: input for input in inputs}
+def _framework_packaging_symlink_headers(ctx, inputs, outputs, headers_mapping):
+    inputs_by_mapped_name = {header_paths.get_mapped_path(input, headers_mapping): input for input in inputs}
 
     # If this check is true it means that multiple inputs have the same 'basename',
     # an additional check is done to see if that was caused by 'action_inputs' containing
     # two different paths to the same file
     #
     # In that case fails with a msg listing the differences found
-    if len(inputs_by_basename) != len(inputs):
-        inputs_by_basename_paths = [x.path for x in inputs_by_basename.values()]
-        inputs_with_duplicated_basename = [x for x in inputs if not x.path in inputs_by_basename_paths]
+    if len(inputs_by_mapped_name) != len(inputs):
+        inputs_by_mapped_name_paths = [x.path for x in inputs_by_mapped_name.values()]
+        inputs_with_duplicated_basename = [x for x in inputs if not x.path in inputs_by_mapped_name_paths]
         if len(inputs_with_duplicated_basename) > 0:
+            # TODO: Fix this error message
             fail("""
                 [Error] Multiple files with the same name exists.\n
                 See below for the list of paths found for each basename:\n
                 {}
-            """.format({x.basename: (x.path, inputs_by_basename[x.basename].path) for x in inputs_with_duplicated_basename}))
+            """.format({
+                    header_paths.get_mapped_path(x, headers_mapping):
+                    (x.path, inputs_by_mapped_name[header_paths.get_mapped_path(x, headers_mapping)].path)
+                for x in inputs_with_duplicated_basename
+            }))
 
     # If no error occurs create symlinks for each output with
     # each input as 'target_file'
-    output_input_dict = {output: inputs_by_basename[output.basename] for output in outputs}
-    for (output, input) in output_input_dict.items():
+    for (input, output) in zip(inputs, outputs):
         ctx.actions.symlink(output = output, target_file = input)
 
-def _framework_packaging_single(ctx, action, inputs, output, manifest = None):
-    outputs = _framework_packaging_multi(ctx, action, inputs, [output], manifest = manifest)
+def _framework_packaging_single(ctx, action, inputs, output, manifest = None, headers_mapping = {}):
+    outputs = _framework_packaging_multi(ctx, action, inputs, [output], manifest = manifest, headers_mapping = headers_mapping)
     return outputs[0] if outputs else None
 
-def _framework_packaging_multi(ctx, action, inputs, outputs, manifest = None):
+def _framework_packaging_multi(ctx, action, inputs, outputs, manifest = None, headers_mapping = {}):
     if not inputs:
         return []
     if inputs == [None]:
@@ -240,7 +288,7 @@ def _framework_packaging_multi(ctx, action, inputs, outputs, manifest = None):
     args.add_all("--outputs", outputs)
 
     if action in ["header", "private_header"]:
-        _framework_packaging_symlink_headers(ctx, inputs, outputs)
+        _framework_packaging_symlink_headers(ctx, inputs, outputs, headers_mapping)
     else:
         ctx.actions.run(
             executable = ctx.executable._framework_packaging,
@@ -331,6 +379,7 @@ def _get_virtual_framework_info(ctx, framework_files, compilation_context_fields
 def _get_framework_files(ctx, deps):
     framework_name = ctx.attr.framework_name
     bundle_extension = ctx.attr.bundle_extension
+    headers_mapping = header_paths.stringify_mapping(ctx.attr.headers_mapping)
 
     # declare framework directory
     framework_dir = "%s/%s.%s" % (ctx.attr.name, framework_name, bundle_extension)
@@ -403,7 +452,8 @@ def _get_framework_files(ctx, deps):
         if PrivateHeadersInfo in dep:
             for hdr in dep[PrivateHeadersInfo].headers.to_list():
                 private_headers_in.append(hdr)
-                destination = paths.join(framework_dir, "PrivateHeaders", hdr.basename)
+                mapped_path = header_paths.get_mapped_path(hdr, headers_mapping)
+                destination = paths.join(framework_dir, "PrivateHeaders", mapped_path)
                 private_headers_out.append(destination)
 
         has_header = False
@@ -413,7 +463,8 @@ def _get_framework_files(ctx, deps):
                     if not hdr.is_directory and hdr.path.endswith((".h", ".hh", ".hpp")):
                         has_header = True
                         headers_in.append(hdr)
-                        destination = paths.join(framework_dir, "Headers", hdr.basename)
+                        mapped_path = header_paths.get_mapped_path(hdr, headers_mapping)
+                        destination = paths.join(framework_dir, "Headers", mapped_path)
                         headers_out.append(destination)
                     elif hdr.path.endswith(".modulemap"):
                         modulemap_in = hdr
@@ -460,19 +511,19 @@ def _get_framework_files(ctx, deps):
     # so inputs that do not depend on compilation
     # are available before those that do,
     # improving parallelism
-    binary_out = _framework_packaging_single(ctx, "binary", binaries_in, binary_out, framework_manifest)
-    headers_out = _framework_packaging_multi(ctx, "header", headers_in, headers_out, framework_manifest)
-    private_headers_out = _framework_packaging_multi(ctx, "private_header", private_headers_in, private_headers_out, framework_manifest)
+    binary_out = _framework_packaging_single(ctx, "binary", binaries_in, binary_out, framework_manifest, headers_mapping)
+    headers_out = _framework_packaging_multi(ctx, "header", headers_in, headers_out, framework_manifest, headers_mapping)
+    private_headers_out = _framework_packaging_multi(ctx, "private_header", private_headers_in, private_headers_out, framework_manifest, headers_mapping)
 
     # Instead of creating a symlink of the modulemap, we need to copy it to modulemap_out.
     # It's a hacky fix to guarantee running the clean action before compiling objc files depending on this framework in non-sandboxed mode.
     # Otherwise, stale header files under framework_root will cause compilation failure in non-sandboxed mode.
-    modulemap_out = _framework_packaging_single(ctx, "modulemap", [modulemap_in], modulemap_out, framework_manifest)
-    swiftmodule_out = _framework_packaging_single(ctx, "swiftmodule", [swiftmodule_in], swiftmodule_out, framework_manifest)
-    swiftinterface_out = _framework_packaging_single(ctx, "swiftinterface", [swiftinterface_in], swiftinterface_out, framework_manifest)
-    swiftdoc_out = _framework_packaging_single(ctx, "swiftdoc", [swiftdoc_in], swiftdoc_out, framework_manifest)
-    infoplist_out = _framework_packaging_single(ctx, "infoplist", [infoplist_in], infoplist_out, framework_manifest)
-    symbol_graph_out = _framework_packaging_single(ctx, "symbol_graph", [symbol_graph_in], symbol_graph_out, framework_manifest)
+    modulemap_out = _framework_packaging_single(ctx, "modulemap", [modulemap_in], modulemap_out, framework_manifest, headers_mapping)
+    swiftmodule_out = _framework_packaging_single(ctx, "swiftmodule", [swiftmodule_in], swiftmodule_out, framework_manifest, headers_mapping)
+    swiftinterface_out = _framework_packaging_single(ctx, "swiftinterface", [swiftinterface_in], swiftinterface_out, framework_manifest, headers_mapping)
+    swiftdoc_out = _framework_packaging_single(ctx, "swiftdoc", [swiftdoc_in], swiftdoc_out, framework_manifest, headers_mapping)
+    infoplist_out = _framework_packaging_single(ctx, "infoplist", [infoplist_in], infoplist_out, framework_manifest, headers_mapping)
+    symbol_graph_out = _framework_packaging_single(ctx, "symbol_graph", [symbol_graph_in], symbol_graph_out, framework_manifest, headers_mapping)
 
     outputs = struct(
         binary = binary_out,
@@ -1344,6 +1395,7 @@ The C++ toolchain from which linking flags and other tools needed by the Swift
 toolchain (such as `clang`) will be retrieved.
 """,
         ),
+        "headers_mapping": attr.label_keyed_string_dict(allow_files=True),
     },
     doc = "Packages compiled code into an Apple .framework package",
 )
