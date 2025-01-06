@@ -30,7 +30,7 @@ static void debug(char *format, ...);
 
 static inline void chomp(char *s);
 static void add_entry(mapping **hashmap, char *key, char *value);
-static void add_header(mapping **hashmap, char *name_space, char *header);
+static void add_header(mapping **hashmap, char *name_space, char *header, char *dest);
 static void parse_args(mapping **hashmap, char **av, int ac);
 static void parse_param_file(mapping **hashmap, char *file);
 
@@ -110,24 +110,21 @@ static void parse_args(mapping **entries, char **av, int ac) {
     av += optind;
 
     // all remaining arguments are the actual headers
-    for (; *av; av++) {
+    for (; *av; av+=2) {
         if (**av == '@') {
             // param file
             parse_param_file(entries, *av);
             continue;
         }
-        add_header(entries, cli_args.name_space, *av);
+        if(!*(av+1)) {
+          fprintf(stderr, "ERROR: header '%s' did not have a mapping as the next argument\n", *av);
+        }
+        add_header(entries, cli_args.name_space, *av, *(av+1));
     }
 }
 
-static void add_header(mapping **hashmap, char *name_space, char *header) {
-    char *bn = strdup(basename(header));
-    if (bn == NULL) {
-        fprintf(stderr,
-                "Failed to parse '%s': could not extract basename: %s\n",
-                header, strerror(errno));
-        exit(1);
-    }
+static void add_header(mapping **hashmap, char *name_space, char *header, char* dest) {
+    char *bn = strdup(dest);
     add_entry(hashmap, bn, strdup(header));
     if (name_space) {
         char *key = NULL;
