@@ -3,15 +3,7 @@ def _add_to_dict_if_present(dict, key, value):
         dict[key] = value
 
 objc_merge_keys = [
-    "sdk_dylib",
-    "sdk_framework",
-    "weak_sdk_framework",
-    "imported_library",
-    "force_load_library",
     "source",
-    "link_inputs",
-    "linkopt",
-    "library",
 ]
 
 def _merge_objc_providers_dict(providers, transitive = [], merge_keys = objc_merge_keys):
