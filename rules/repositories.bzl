@@ -88,6 +88,9 @@ def _rules_ios_bzlmod_dependencies():
         sha256 = "bb01097c7c7a1407f8ad49a1a0b1960655cf823c26ad2782d0b7d15b323838e2",
         url = "https://github.com/bazelbuild/rules_swift/releases/download/1.18.0/rules_swift.1.18.0.tar.gz",
         patches = [
+            # NOTE: This backports a commit from rules_swift 2.x that permits
+            # evaluation even if swiftc is not on PATH on Linux:
+            # https://github.com/bazelbuild/rules_swift/commit/a8d7635f1ce14de720cec94b759b525f04b7797e
             "@@build_bazel_rules_ios//patches:build_bazel_rules_swift.patch",
         ],
         patch_args = ["-p1"],
