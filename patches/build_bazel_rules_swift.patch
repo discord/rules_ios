@@ -1,0 +1,42 @@
+From 3851d2ed9598d8241cdc1ebf1bdaedaea3c19d1f Mon Sep 17 00:00:00 2001
+From: Denbeigh Stevens <denbeigh.stevens@discordapp.com>
+Date: Mon, 3 Feb 2025 19:33:36 +0000
+Subject: [PATCH] Warn instead of fail when `swiftc` not found on Linux (#1433)
+
+---
+ swift/internal/swift_autoconfiguration.bzl | 15 +++++++++++++--
+ 1 file changed, 13 insertions(+), 2 deletions(-)
+
+diff --git a/swift/internal/swift_autoconfiguration.bzl b/swift/internal/swift_autoconfiguration.bzl
+index 66c89175d..ee6cdc81e 100644
+--- a/swift/internal/swift_autoconfiguration.bzl
++++ b/swift/internal/swift_autoconfiguration.bzl
+@@ -266,7 +266,18 @@ def _create_linux_toolchain(repository_ctx):
+     """
+     path_to_swiftc = repository_ctx.which("swiftc")
+     if not path_to_swiftc:
+-        fail("No 'swiftc' executable found in $PATH")
++        print("""\
++No 'swiftc' executable found in $PATH. Not auto-generating a Linux Swift \
++toolchain.
++""")  # buildifier: disable=print
++        repository_ctx.file(
++            "BUILD",
++            """\
++# No 'swiftc' executable found in $PATH. Not auto-generating a Linux Swift \
++toolchain.
++""",
++        )
++        return
+ 
+     root = path_to_swiftc.dirname.dirname
+     feature_values = _compute_feature_values(repository_ctx, path_to_swiftc)
+@@ -285,7 +296,7 @@ def _create_linux_toolchain(repository_ctx):
+ 
+     repository_ctx.file(
+         "BUILD",
+-        """
++        """\
+ load(
+     "@build_bazel_rules_swift//swift/internal:swift_toolchain.bzl",
+     "swift_toolchain",
