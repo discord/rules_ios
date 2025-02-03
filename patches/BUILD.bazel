@@ -1,0 +1,1 @@
+exports_files(["build_bazel_rules_swift.patch"])
