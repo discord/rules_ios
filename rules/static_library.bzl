@@ -1,5 +1,6 @@
 load("@bazel_skylib//lib:paths.bzl", "paths")
 load("//rules:library.bzl", "apple_library")
+load("@build_bazel_rules_swift//swift:providers.bzl", "create_swift_module_context", "create_clang_module_inputs", "SwiftInfo")
 
 def apple_static_library(
         name,
@@ -174,6 +175,17 @@ def _cc_headers_symlinks_impl(ctx):
     return [
         DefaultInfo(files = output_depset),
         CcInfo(compilation_context = compilation_context),
+        SwiftInfo(
+            modules = [
+                create_swift_module_context(
+                    name = "{}_swift_module".format(ctx.attr.name),
+                    clang = create_clang_module_inputs(
+                        compilation_context = compilation_context,
+                        module_map = None,
+                    )
+                )
+            ]
+        )
     ]
 
 cc_headers_symlinks = rule(
