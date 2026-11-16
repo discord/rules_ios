@@ -3,6 +3,7 @@ load("@bazel_skylib//lib:partial.bzl", "partial")
 load("@bazel_tools//tools/cpp:toolchain_utils.bzl", "find_cpp_toolchain", "use_cpp_toolchain")
 load(
     "@build_bazel_rules_apple//apple/internal:providers.bzl",
+    "AppleDynamicFrameworkInfo",
     "AppleResourceInfo",
     "IosFrameworkBundleInfo",
     "new_applebundleinfo",
@@ -62,9 +63,9 @@ def _framework_middleman(ctx):
                 cc_providers.append(lib_dep[CcInfo])
             if AppleResourceInfo in lib_dep:
                 resource_providers.append(lib_dep[AppleResourceInfo])
-        if apple_common.AppleDynamicFramework in lib_dep:
+        if AppleDynamicFrameworkInfo in lib_dep:
             dynamic_frameworks.append(lib_dep)
-            dynamic_framework_providers.append(lib_dep[apple_common.AppleDynamicFramework])
+            dynamic_framework_providers.append(lib_dep[AppleDynamicFrameworkInfo])
 
     for dep in ctx.attr.framework_deps:
         _process_dep(dep)

@@ -1,3 +1,4 @@
+load("@build_bazel_rules_apple//apple/internal:providers.bzl", "new_appledynamicframeworkinfo")
 load("@rules_cc//cc/common:objc_info.bzl", "new_objc_provider")
 
 def _add_to_dict_if_present(dict, key, value):
@@ -43,12 +44,11 @@ def _merge_dynamic_framework_providers(dynamic_framework_providers):
             # Note:  we may want to merge this with the below inputs?
             transitive = [getattr(dep, key) for dep in dynamic_framework_providers],
         )
-        _add_to_dict_if_present(fields, key, set)
+        fields[key] = set
 
-    fields["objc"] = new_objc_provider()
     fields["cc_info"] = CcInfo()
 
-    return apple_common.new_dynamic_framework_provider(**fields)
+    return new_appledynamicframeworkinfo(**fields)
 
 objc_provider_utils = struct(
     merge_objc_providers_dict = _merge_objc_providers_dict,
