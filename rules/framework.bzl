@@ -1376,11 +1376,6 @@ the framework as a dependency.""",
             doc = "The bundle identifier of the framework. Currently unused.",
             default = "",
         ),
-        "_xcrunwrapper": attr.label(
-            cfg = "exec",
-            default = Label("@bazel_tools//tools/objc:xcrunwrapper"),
-            executable = True,
-        ),
         "_cc_toolchain": attr.label(
             providers = [cc_common.CcToolchainInfo],
             default = Label("@bazel_tools//tools/cpp:current_cc_toolchain"),
