@@ -313,7 +313,6 @@ def _command_line_options(
     default_platforms = [settings[_CPU_TO_DEFAULT_PLATFORM_FLAG[cpu]]] if _is_bazel_7 else []
     return {
         build_settings_labels.use_tree_artifacts_outputs: force_bundle_outputs if force_bundle_outputs else settings[build_settings_labels.use_tree_artifacts_outputs],
-        "//command_line_option:apple configuration distinguisher": "applebin_" + platform_type,
         "//command_line_option:apple_platform_type": platform_type,
         "//command_line_option:apple_platforms": apple_platforms,
         # `apple_split_cpu` is used by the Bazel Apple configuration distinguisher to distinguish
@@ -389,7 +388,6 @@ _apple_platform_transition_inputs = _apple_platforms_rule_base_transition_inputs
 ]
 _apple_rule_base_transition_outputs = [
     build_settings_labels.use_tree_artifacts_outputs,
-    "//command_line_option:apple configuration distinguisher",
     "//command_line_option:apple_platform_type",
     "//command_line_option:apple_platforms",
     "//command_line_option:apple_split_cpu",
