@@ -44,12 +44,12 @@ def _precompiled_apple_resource_bundle_impl(ctx):
 
     platform_prerequisites = platform_support.platform_prerequisites(
         apple_fragment = ctx.fragments.apple,
+        apple_platform_info = transition_support.current_apple_platform_info(ctx),
         config_vars = ctx.var,
         device_families = _DEVICE_FAMILIES_BY_PLATFORM_TYPE[platform_type],
         explicit_minimum_os = None,
         explicit_minimum_deployment_os = None,
         objc_fragment = None,
-        platform_type_string = platform_type,
         uses_swift = False,
         xcode_version_config = ctx.attr._xcode_config[apple_common.XcodeVersionConfig],
         features = [],

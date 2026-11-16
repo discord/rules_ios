@@ -29,6 +29,10 @@ load(
     "@build_bazel_rules_apple//apple/build_settings:build_settings.bzl",
     "build_settings_labels",
 )
+load(
+    "@build_bazel_rules_apple//apple/internal:providers.bzl",
+    "new_appleplatforminfo",
+)
 
 _supports_visionos = hasattr(apple_common.platform_type, "visionos")
 _is_bazel_7 = not hasattr(apple_common, "apple_crosstool_transition")
@@ -59,6 +63,17 @@ def _current_apple_platform(apple_fragment, xcode_config):
     return struct(
         platform = platform,
         target_os_version = target_os_version,
+    )
+
+def _current_apple_platform_info(ctx):
+    """Returns an ApplePlatformInfo for the single-arch Apple platform of the current configuration."""
+    platform = ctx.fragments.apple.single_arch_platform
+    cpu = ctx.fragments.apple.single_arch_cpu
+    return new_appleplatforminfo(
+        target_arch = cpu.removeprefix("sim_"),
+        target_build_config = ctx.configuration,
+        target_environment = "device" if platform.is_device else "simulator",
+        target_os = str(platform.platform_type),
     )
 
 # PATCH: end
@@ -509,4 +524,5 @@ transition_support = struct(
     apple_platform_split_transition = _apple_platform_split_transition,
     apple_rule_transition = _apple_rule_base_transition,
     current_apple_platform = _current_apple_platform,
+    current_apple_platform_info = _current_apple_platform_info,
 )

@@ -726,6 +726,7 @@ def _platform_prerequisites(ctx, rule_descriptor, platform_type, features):
 
     return platform_support.platform_prerequisites(
         apple_fragment = ctx.fragments.apple,
+        apple_platform_info = transition_support.current_apple_platform_info(ctx),
         config_vars = ctx.var,
         cpp_fragment = ctx.fragments.cpp,
         device_families = rule_descriptor.allowed_device_families,
@@ -733,7 +734,6 @@ def _platform_prerequisites(ctx, rule_descriptor, platform_type, features):
         explicit_minimum_os = ctx.attr.minimum_os_version,
         features = features,
         objc_fragment = ctx.fragments.objc,
-        platform_type_string = platform_type,
         uses_swift = uses_swift,
         xcode_version_config = ctx.attr._xcode_config[apple_common.XcodeVersionConfig],
         **version_args
