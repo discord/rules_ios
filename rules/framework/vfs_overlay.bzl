@@ -9,6 +9,7 @@ in-memory tree roots, it pre-pends the prefix of the `vfsoverlay` path
 to each of the entries.
 """
 
+load("@rules_cc//cc/common:objc_info.bzl", "new_objc_provider")
 load("@bazel_tools//tools/cpp:toolchain_utils.bzl", "find_cpp_toolchain", "use_cpp_toolchain")
 load("@build_bazel_rules_swift//swift:providers.bzl", "SwiftInfo")
 load("//rules:features.bzl", "feature_names")
@@ -292,7 +293,7 @@ def _framework_vfs_overlay_impl(ctx):
         DefaultInfo(
             files = depset([vfs_overlay_file]),
         ),
-        apple_common.new_objc_provider(),
+        new_objc_provider(),
         cc_info,
         VFSOverlayInfo(
             files = depset([vfs.vfsoverlay_file]),

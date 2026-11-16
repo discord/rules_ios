@@ -6,6 +6,7 @@ https://github.com/bazelbuild/rules_apple/issues/319
 if this is ever fixed in bazel it should be removed
 """
 
+load("@rules_cc//cc/common:objc_info.bzl", "new_objc_provider")
 load("@bazel_skylib//lib:dicts.bzl", "dicts")
 load("@bazel_skylib//lib:partial.bzl", "partial")
 load("@bazel_skylib//lib:paths.bzl", "paths")
@@ -18,7 +19,7 @@ load("@build_bazel_rules_apple//apple/internal:platform_support.bzl", "platform_
 load("@build_bazel_rules_apple//apple/internal:resources.bzl", "resources")
 load("@build_bazel_rules_apple//apple/internal:resource_actions.bzl", "resource_actions")
 load("@build_bazel_rules_apple//apple/internal:rule_attrs.bzl", "rule_attrs")
-load("@build_bazel_rules_apple//apple/internal:apple_toolchains.bzl", "AppleMacToolsToolchainInfo")
+load("@build_bazel_rules_apple//apple/internal:apple_toolchains.bzl", "apple_toolchain_utils")
 load("//rules:transition_support.bzl", "transition_support")
 load("//rules:utils.bzl", "bundle_identifier_for_bundle")
 
@@ -44,16 +45,16 @@ def _precompiled_apple_resource_bundle_impl(ctx):
 
     platform_prerequisites = platform_support.platform_prerequisites(
         apple_fragment = ctx.fragments.apple,
+        apple_platform_info = transition_support.current_apple_platform_info(ctx),
         config_vars = ctx.var,
         device_families = _DEVICE_FAMILIES_BY_PLATFORM_TYPE[platform_type],
         explicit_minimum_os = None,
         explicit_minimum_deployment_os = None,
         objc_fragment = None,
-        platform_type_string = platform_type,
         uses_swift = False,
         xcode_version_config = ctx.attr._xcode_config[apple_common.XcodeVersionConfig],
         features = [],
-        build_settings = None,
+        build_settings = apple_toolchain_utils.get_xplat_toolchain(ctx).build_settings,
     )
     partials_args = dict(
         actions = ctx.actions,
@@ -75,9 +76,10 @@ def _precompiled_apple_resource_bundle_impl(ctx):
         include_executable_name = False,
     )
 
-    apple_mac_toolchain_info = ctx.attr._mac_toolchain[AppleMacToolsToolchainInfo]
+    apple_mac_toolchain_info = apple_toolchain_utils.get_mac_toolchain(ctx)
     partial_output = partial.call(
         partials.resources_partial(
+            mac_exec_group = apple_toolchain_utils.get_mac_exec_group(ctx),
             apple_mac_toolchain_info = apple_mac_toolchain_info,
             resource_deps = ctx.attr.resources,
             top_level_infoplists = resources.collect(
@@ -102,6 +104,7 @@ def _precompiled_apple_resource_bundle_impl(ctx):
     # No need to pass swift_module to merge_root_infoplists
     partials_args.pop("swift_module")
     resource_actions.merge_root_infoplists(
+        mac_exec_group = apple_toolchain_utils.get_mac_exec_group(ctx),
         bundle_id = ctx.attr.bundle_id or bundle_identifier_for_bundle(bundle_name),
         input_plists = ctx.files.infoplists,
         output_pkginfo = None,
@@ -179,6 +182,7 @@ def _precompiled_apple_resource_bundle_impl(ctx):
     apple_support.run(
         actions = ctx.actions,
         apple_fragment = platform_prerequisites.apple_fragment,
+        exec_group = apple_toolchain_utils.get_mac_exec_group(ctx),
         executable = bundletool_experimental,
         execution_requirements = {},
         inputs = depset(input_files + [bundletool_instructions_file]),
@@ -209,12 +213,13 @@ def _precompiled_apple_resource_bundle_impl(ctx):
             ],
         ),
         new_appleresourcebundleinfo(),
-        apple_common.new_objc_provider(),
+        new_objc_provider(),
         CcInfo(),
     ]
 
 _precompiled_apple_resource_bundle = rule(
     implementation = _precompiled_apple_resource_bundle_impl,
+    exec_groups = apple_toolchain_utils.use_apple_exec_group_toolchain(),
     fragments = ["apple"],
     cfg = transition_support.apple_rule_transition,
     attrs = dicts.add(rule_attrs.common_tool_attrs(), dict(
@@ -273,11 +278,6 @@ the bundle as a dependency.""",
         _allowlist_function_transition = attr.label(
             default = "@bazel_tools//tools/allowlists/function_transition_allowlist",
             doc = "Needed to allow this rule to have an incoming edge configuration transition.",
-        ),
-        _mac_toolchain = attr.label(
-            default = Label("@build_bazel_rules_apple//apple/internal:mac_tools_toolchain"),
-            providers = [[AppleMacToolsToolchainInfo]],
-            cfg = "exec",
         ),
     )),
 )

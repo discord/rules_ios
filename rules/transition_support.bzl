@@ -29,6 +29,10 @@ load(
     "@build_bazel_rules_apple//apple/build_settings:build_settings.bzl",
     "build_settings_labels",
 )
+load(
+    "@build_bazel_rules_apple//apple/internal:providers.bzl",
+    "new_appleplatforminfo",
+)
 
 _supports_visionos = hasattr(apple_common.platform_type, "visionos")
 _is_bazel_7 = not hasattr(apple_common, "apple_crosstool_transition")
@@ -59,6 +63,17 @@ def _current_apple_platform(apple_fragment, xcode_config):
     return struct(
         platform = platform,
         target_os_version = target_os_version,
+    )
+
+def _current_apple_platform_info(ctx):
+    """Returns an ApplePlatformInfo for the single-arch Apple platform of the current configuration."""
+    platform = ctx.fragments.apple.single_arch_platform
+    cpu = ctx.fragments.apple.single_arch_cpu
+    return new_appleplatforminfo(
+        target_arch = cpu.removeprefix("sim_"),
+        target_build_config = ctx.configuration,
+        target_environment = "device" if platform.is_device else "simulator",
+        target_os = str(platform.platform_type),
     )
 
 # PATCH: end
@@ -298,7 +313,6 @@ def _command_line_options(
     default_platforms = [settings[_CPU_TO_DEFAULT_PLATFORM_FLAG[cpu]]] if _is_bazel_7 else []
     return {
         build_settings_labels.use_tree_artifacts_outputs: force_bundle_outputs if force_bundle_outputs else settings[build_settings_labels.use_tree_artifacts_outputs],
-        "//command_line_option:apple configuration distinguisher": "applebin_" + platform_type,
         "//command_line_option:apple_platform_type": platform_type,
         "//command_line_option:apple_platforms": apple_platforms,
         # `apple_split_cpu` is used by the Bazel Apple configuration distinguisher to distinguish
@@ -306,9 +320,6 @@ def _command_line_options(
         "//command_line_option:apple_split_cpu": environment_arch if environment_arch else "",
         "//command_line_option:compiler": None,
         "//command_line_option:cpu": cpu,
-        "//command_line_option:crosstool_top": (
-            settings["//command_line_option:apple_crosstool_top"]
-        ),
         "//command_line_option:fission": [],
         "//command_line_option:grte_top": None,
         "//command_line_option:platforms": [apple_platforms[0]] if apple_platforms else default_platforms,
@@ -359,7 +370,6 @@ def _apple_rule_base_transition_impl(settings, attr):
 # - https://github.com/bazelbuild/bazel/blob/master/src/main/java/com/google/devtools/build/lib/rules/cpp/CppOptions.java
 _apple_rule_common_transition_inputs = [
     build_settings_labels.use_tree_artifacts_outputs,
-    "//command_line_option:apple_crosstool_top",
 ] + _CPU_TO_DEFAULT_PLATFORM_FLAG.values()
 _apple_rule_base_transition_inputs = _apple_rule_common_transition_inputs + [
     "//command_line_option:apple_platform_type",
@@ -378,13 +388,11 @@ _apple_platform_transition_inputs = _apple_platforms_rule_base_transition_inputs
 ]
 _apple_rule_base_transition_outputs = [
     build_settings_labels.use_tree_artifacts_outputs,
-    "//command_line_option:apple configuration distinguisher",
     "//command_line_option:apple_platform_type",
     "//command_line_option:apple_platforms",
     "//command_line_option:apple_split_cpu",
     "//command_line_option:compiler",
     "//command_line_option:cpu",
-    "//command_line_option:crosstool_top",
     "//command_line_option:fission",
     "//command_line_option:grte_top",
     "//command_line_option:ios_minimum_os",
@@ -514,4 +522,5 @@ transition_support = struct(
     apple_platform_split_transition = _apple_platform_split_transition,
     apple_rule_transition = _apple_rule_base_transition,
     current_apple_platform = _current_apple_platform,
+    current_apple_platform_info = _current_apple_platform_info,
 )

@@ -1,5 +1,6 @@
 """Library rules"""
 
+load("@rules_cc//cc/common:objc_info.bzl", "new_objc_provider")
 load("@bazel_skylib//lib:dicts.bzl", "dicts")
 load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@bazel_skylib//lib:sets.bzl", "sets")
@@ -40,7 +41,7 @@ def _private_headers_impl(ctx):
         PrivateHeadersInfo(
             headers = depset(direct = ctx.files.headers),
         ),
-        apple_common.new_objc_provider(),
+        new_objc_provider(),
         CcInfo(
             compilation_context = cc_common.create_compilation_context(
                 headers = depset(direct = ctx.files.headers),
