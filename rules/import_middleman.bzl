@@ -1,3 +1,4 @@
+load("@rules_cc//cc/common:objc_info.bzl", "new_objc_provider")
 load("//rules/internal:objc_provider_utils.bzl", "objc_provider_utils")
 load("//rules:utils.bzl", "is_bazel_7")
 load("@bazel_tools//tools/cpp:toolchain_utils.bzl", "find_cpp_toolchain", "use_cpp_toolchain")
@@ -256,9 +257,7 @@ def _file_collector_rule_impl(ctx):
         ],
     )
 
-    objc = apple_common.new_objc_provider(
-        **objc_provider_fields
-    )
+    objc = new_objc_provider()
 
     dep_cc_infos = [dep[CcInfo] for dep in ctx.attr.deps if CcInfo in dep]
     cc_info = cc_common.merge_cc_infos(cc_infos = dep_cc_infos)

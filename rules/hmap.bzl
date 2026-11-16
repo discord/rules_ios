@@ -1,5 +1,6 @@
 """Header Map rules"""
 
+load("@rules_cc//cc/common:objc_info.bzl", "ObjcInfo", "new_objc_provider")
 load("@build_bazel_rules_swift//swift:swift.bzl", "swift_common")
 
 HeaderMapInfo = provider(
@@ -58,10 +59,10 @@ def _make_headermap_impl(ctx):
     hdrs_lists = [zip(ctx.files.hdrs, ctx.attr.hdr_dests)]
 
     for provider in ctx.attr.direct_hdr_providers:
-        if apple_common.Objc in provider:
+        if ObjcInfo in provider:
             extra_headers = [
                 (s, s.basename)
-                for s in getattr(provider[apple_common.Objc], "direct_headers", [])
+                for s in getattr(provider[ObjcInfo], "direct_headers", [])
             ]
             hdrs_lists.append(extra_headers)
         if CcInfo in provider:
@@ -72,7 +73,7 @@ def _make_headermap_impl(ctx):
             hdrs_lists.append(extra_headers)
 
         if len(hdrs_lists) == 1:
-            # means neither apple_common.Objc nor CcInfo in hdr provider target
+            # means neither ObjcInfo nor CcInfo in hdr provider target
             fail("direct_hdr_provider %s must contain either 'CcInfo' or 'objc' provider" % provider)
 
     headermap = ctx.actions.declare_file(ctx.label.name + ".hmap")
@@ -94,7 +95,7 @@ def _make_headermap_impl(ctx):
         DefaultInfo(
             files = depset([headermap]),
         ),
-        apple_common.new_objc_provider(),
+        new_objc_provider(),
         cc_info_provider,
     ]
 

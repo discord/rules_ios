@@ -1,3 +1,4 @@
+load("@rules_cc//cc/common:objc_info.bzl", "ObjcInfo", "new_objc_provider")
 load("@bazel_skylib//lib:partial.bzl", "partial")
 load("@bazel_tools//tools/cpp:toolchain_utils.bzl", "find_cpp_toolchain", "use_cpp_toolchain")
 load(
@@ -36,7 +37,6 @@ load("//rules:transition_support.bzl", "transition_support")
 
 def _framework_middleman(ctx):
     resource_providers = []
-    objc_providers = []
     dynamic_frameworks = []
     dynamic_framework_providers = []
     apple_embeddable_infos = []
@@ -62,8 +62,6 @@ def _framework_middleman(ctx):
                 cc_providers.append(lib_dep[CcInfo])
             if AppleResourceInfo in lib_dep:
                 resource_providers.append(lib_dep[AppleResourceInfo])
-        if apple_common.Objc in lib_dep:
-            objc_providers.append(lib_dep[apple_common.Objc])
         if apple_common.AppleDynamicFramework in lib_dep:
             dynamic_frameworks.append(lib_dep)
             dynamic_framework_providers.append(lib_dep[apple_common.AppleDynamicFramework])
@@ -76,17 +74,8 @@ def _framework_middleman(ctx):
             for lib_dep in dep[AvoidDepsInfo].libraries:
                 _process_dep(lib_dep)
 
-    # Here we only need to loop a subset of the keys
-    objc_provider_fields = objc_provider_utils.merge_objc_providers_dict(providers = objc_providers, merge_keys = [
-        "dynamic_framework_file",
-    ])
-
-    # Add the frameworks to the objc provider for Bazel <= 6
     dynamic_framework_provider = objc_provider_utils.merge_dynamic_framework_providers(dynamic_framework_providers)
-    objc_provider_fields["dynamic_framework_file"] = depset(
-        transitive = [dynamic_framework_provider.framework_files, objc_provider_fields.get("dynamic_framework_file", depset([]))],
-    )
-    objc_provider = apple_common.new_objc_provider(**objc_provider_fields)
+    objc_provider = new_objc_provider()
 
     # Add the framework info to the cc info linking context for Bazel >= 7
     framework_cc_info = CcInfo(
@@ -206,96 +195,27 @@ toolchain (such as `clang`) will be retrieved.
         """,
 )
 
-def _dedupe_key(key, avoid_libraries, objc_provider_fields, check_name = False):
-    updated_library = []
-    exisiting_library = objc_provider_fields.get(key, depset([]))
-    for f in exisiting_library.to_list():
-        check_key = (f.basename if check_name else f)
-        if check_key in avoid_libraries:
-            continue
-        updated_library.append(f)
-    objc_provider_fields[key] = depset(updated_library)
-
-def _get_lib_name(name):
-    """return a lib name for a name dropping prefix/suffix"""
-    if name.startswith("lib"):
-        name = name[3:]
-    if name.endswith(".dylib"):
-        name = name[:-6]
-    elif name.endswith(".so"):
-        name = name[:-3]
-    return name
-
 def _dep_middleman(ctx):
     objc_providers = []
     cc_providers = []
-    avoid_libraries = {}
 
     def _collect_providers(lib_dep):
-        if apple_common.Objc in lib_dep:
-            objc_providers.append(lib_dep[apple_common.Objc])
+        if ObjcInfo in lib_dep:
+            objc_providers.append(lib_dep[ObjcInfo])
         if CcInfo in lib_dep:
             cc_providers.append(lib_dep[CcInfo])
-
-    def _process_avoid_deps(avoid_dep_libs):
-        for dep in avoid_dep_libs:
-            if apple_common.Objc in dep:
-                for lib in dep[apple_common.Objc].library.to_list():
-                    avoid_libraries[lib] = True
-                for lib in dep[apple_common.Objc].force_load_library.to_list():
-                    avoid_libraries[lib] = True
-                for lib in dep[apple_common.Objc].imported_library.to_list():
-                    avoid_libraries[lib.basename] = True
-                for lib in dep[apple_common.Objc].static_framework_file.to_list():
-                    avoid_libraries[lib.basename] = True
-            if CcInfo in dep:
-                for linker_input in dep[CcInfo].linking_context.linker_inputs.to_list():
-                    for library_to_link in linker_input.libraries:
-                        if library_to_link.static_library:
-                            avoid_libraries[library_to_link.static_library] = True
 
     for dep in ctx.attr.deps:
         _collect_providers(dep)
 
         # Loop AvoidDepsInfo here as well
         if AvoidDepsInfo in dep:
-            _process_avoid_deps(dep[AvoidDepsInfo].libraries)
             for lib_dep in dep[AvoidDepsInfo].libraries:
                 _collect_providers(lib_dep)
 
-    # Construct & merge the ObjcProvider, the linking information is only used in Bazel <= 6
-    objc_provider_fields = objc_provider_utils.merge_objc_providers_dict(providers = objc_providers, merge_keys = [
-        "force_load_library",
-        "imported_library",
-        "library",
-        "link_inputs",
-        "linkopt",
-        "sdk_dylib",
-        "sdk_framework",
-        "source",
-        "static_framework_file",
-        "weak_sdk_framework",
-    ])
-
-    # Ensure to strip out static link inputs
-    _dedupe_key("library", avoid_libraries, objc_provider_fields)
-    _dedupe_key("force_load_library", avoid_libraries, objc_provider_fields)
-    _dedupe_key("imported_library", avoid_libraries, objc_provider_fields, check_name = True)
-    _dedupe_key("static_framework_file", avoid_libraries, objc_provider_fields, check_name = True)
-
-    if "sdk_dylib" in objc_provider_fields:
-        # Put sdk_dylib at _end_ of the linker invocation. Apple's linkers have
-        # problems when SDK dylibs are first in the list, starting with Bazel
-        # 6.0 this is backwards by default
-        objc_provider_fields["linkopt"] = depset(
-            [],
-            transitive = [
-                objc_provider_fields.get("linkopt", depset([])),
-                depset(["-l" + _get_lib_name(lib) for lib in objc_provider_fields.pop("sdk_dylib").to_list()]),
-            ],
-        )
-
-    objc_provider = apple_common.new_objc_provider(**objc_provider_fields)
+    objc_provider = new_objc_provider(
+        **objc_provider_utils.merge_objc_providers_dict(providers = objc_providers)
+    )
 
     # Construct the CcInfo provider, the linking information is used in Bazel >= 7.
     cc_info_provider = cc_common.merge_cc_infos(cc_infos = cc_providers)

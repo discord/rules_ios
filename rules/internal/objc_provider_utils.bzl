@@ -1,3 +1,5 @@
+load("@rules_cc//cc/common:objc_info.bzl", "new_objc_provider")
+
 def _add_to_dict_if_present(dict, key, value):
     if value:
         dict[key] = value
@@ -27,7 +29,7 @@ def _merge_objc_providers(providers, transitive = []):
         providers = providers,
         transitive = transitive,
     )
-    return apple_common.new_objc_provider(**objc_provider_fields)
+    return new_objc_provider(**objc_provider_fields)
 
 def _merge_dynamic_framework_providers(dynamic_framework_providers):
     fields = {}
@@ -43,7 +45,7 @@ def _merge_dynamic_framework_providers(dynamic_framework_providers):
         )
         _add_to_dict_if_present(fields, key, set)
 
-    fields["objc"] = apple_common.new_objc_provider()
+    fields["objc"] = new_objc_provider()
     fields["cc_info"] = CcInfo()
 
     return apple_common.new_dynamic_framework_provider(**fields)

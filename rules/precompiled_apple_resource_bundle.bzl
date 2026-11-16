@@ -6,6 +6,7 @@ https://github.com/bazelbuild/rules_apple/issues/319
 if this is ever fixed in bazel it should be removed
 """
 
+load("@rules_cc//cc/common:objc_info.bzl", "new_objc_provider")
 load("@bazel_skylib//lib:dicts.bzl", "dicts")
 load("@bazel_skylib//lib:partial.bzl", "partial")
 load("@bazel_skylib//lib:paths.bzl", "paths")
@@ -209,7 +210,7 @@ def _precompiled_apple_resource_bundle_impl(ctx):
             ],
         ),
         new_appleresourcebundleinfo(),
-        apple_common.new_objc_provider(),
+        new_objc_provider(),
         CcInfo(),
     ]
 
