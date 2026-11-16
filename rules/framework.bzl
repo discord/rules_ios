@@ -24,7 +24,7 @@ load("@build_bazel_rules_apple//apple/internal:processor.bzl", "processor")
 load("@build_bazel_rules_apple//apple/internal:resource_actions.bzl", "resource_actions")
 load("@build_bazel_rules_apple//apple/internal:resources.bzl", "resources")
 load("@build_bazel_rules_apple//apple/internal:rule_support.bzl", "rule_support")
-load("@build_bazel_rules_apple//apple/internal:apple_toolchains.bzl", "AppleMacToolsToolchainInfo", "AppleXPlatToolsToolchainInfo")
+load("@build_bazel_rules_apple//apple/internal:apple_toolchains.bzl", "apple_toolchain_utils")
 load("@build_bazel_rules_apple//apple/internal:swift_support.bzl", "swift_support")
 load("@build_bazel_rules_apple//apple/internal/utils:clang_rt_dylibs.bzl", "clang_rt_dylibs")
 load("@build_bazel_rules_apple//apple/internal:providers.bzl", "AppleBundleInfo", "ApplePlatformInfo", "IosFrameworkBundleInfo", "new_applebundleinfo", "new_iosframeworkbundleinfo")
@@ -672,7 +672,7 @@ def _merge_root_infoplists(ctx):
     bundle_name = ctx.attr.framework_name
     current_apple_platform = transition_support.current_apple_platform(apple_fragment = ctx.fragments.apple, xcode_config = ctx.attr._xcode_config)
     platform_type = str(current_apple_platform.platform.platform_type)
-    apple_mac_toolchain_info = ctx.attr._mac_toolchain[AppleMacToolsToolchainInfo]
+    apple_mac_toolchain_info = apple_toolchain_utils.get_mac_toolchain(ctx)
     if hasattr(rule_support, "rule_descriptor_no_ctx"):
         descriptor_fn = rule_support.rule_descriptor_no_ctx
     else:
@@ -688,6 +688,7 @@ def _merge_root_infoplists(ctx):
     )
 
     resource_actions.merge_root_infoplists(
+        mac_exec_group = apple_toolchain_utils.get_mac_exec_group(ctx),
         actions = ctx.actions,
         bundle_name = bundle_name,
         bundle_id = ctx.attr.bundle_id,
@@ -720,7 +721,7 @@ def _platform_prerequisites(ctx, rule_descriptor, platform_type, features):
     deps = getattr(ctx.attr, "deps", None)
     uses_swift = swift_support.uses_swift(deps) if deps else False
 
-    apple_xplat_toolchain_info = ctx.attr._xplat_toolchain[AppleXPlatToolsToolchainInfo]
+    apple_xplat_toolchain_info = apple_toolchain_utils.get_xplat_toolchain(ctx)
     version_args = {
         "build_settings": apple_xplat_toolchain_info.build_settings,
     }
@@ -746,8 +747,8 @@ def _bundle_dynamic_framework(ctx, is_extension_safe, avoid_deps):
     Currently, this doesn't include headers or other interface files.
     """
     actions = ctx.actions
-    apple_mac_toolchain_info = ctx.attr._mac_toolchain[AppleMacToolsToolchainInfo]
-    apple_xplat_toolchain_info = ctx.attr._xplat_toolchain[AppleXPlatToolsToolchainInfo]
+    apple_mac_toolchain_info = apple_toolchain_utils.get_mac_toolchain(ctx)
+    apple_xplat_toolchain_info = apple_toolchain_utils.get_xplat_toolchain(ctx)
     cc_toolchain_forwarder = ctx.split_attr._child_configuration_dummy
     bin_root_path = ctx.bin_dir.path
     bundle_id = ctx.attr.bundle_id
@@ -861,6 +862,8 @@ def _bundle_dynamic_framework(ctx, is_extension_safe, avoid_deps):
 
     processor_partials.append(
         partials.codesigning_dossier_partial(
+            mac_exec_group = apple_toolchain_utils.get_mac_exec_group(ctx),
+            xplat_exec_group = apple_toolchain_utils.get_xplat_exec_group(ctx),
             actions = actions,
             apple_mac_toolchain_info = apple_mac_toolchain_info,
             apple_xplat_toolchain_info = apple_xplat_toolchain_info,
@@ -879,6 +882,7 @@ def _bundle_dynamic_framework(ctx, is_extension_safe, avoid_deps):
 
     processor_partials.append(
         partials.clang_rt_dylibs_partial(
+            mac_exec_group = apple_toolchain_utils.get_mac_exec_group(ctx),
             actions = actions,
             apple_mac_toolchain_info = apple_mac_toolchain_info,
             binary_artifact = binary_artifact,
@@ -891,6 +895,7 @@ def _bundle_dynamic_framework(ctx, is_extension_safe, avoid_deps):
 
     processor_partials.append(
         partials.debug_symbols_partial(
+            mac_exec_group = apple_toolchain_utils.get_mac_exec_group(ctx),
             actions = actions,
             bundle_extension = bundle_extension,
             bundle_name = bundle_name,
@@ -946,6 +951,7 @@ def _bundle_dynamic_framework(ctx, is_extension_safe, avoid_deps):
 
     processor_partials.append(
         partials.resources_partial(
+            mac_exec_group = apple_toolchain_utils.get_mac_exec_group(ctx),
             actions = actions,
             apple_mac_toolchain_info = apple_mac_toolchain_info,
             bundle_extension = bundle_extension,
@@ -967,6 +973,7 @@ def _bundle_dynamic_framework(ctx, is_extension_safe, avoid_deps):
     )
     processor_partials.append(
         partials.swift_dylibs_partial(
+            mac_exec_group = apple_toolchain_utils.get_mac_exec_group(ctx),
             actions = actions,
             apple_mac_toolchain_info = apple_mac_toolchain_info,
             binary_artifact = binary_artifact,
@@ -977,6 +984,7 @@ def _bundle_dynamic_framework(ctx, is_extension_safe, avoid_deps):
     )
     processor_partials.append(
         partials.apple_symbols_file_partial(
+            mac_exec_group = apple_toolchain_utils.get_mac_exec_group(ctx),
             actions = actions,
             binary_artifact = binary_artifact,
             dsym_binaries = debug_outputs.dsym_binaries,
@@ -988,6 +996,8 @@ def _bundle_dynamic_framework(ctx, is_extension_safe, avoid_deps):
     )
 
     processor_result = processor.process(
+        mac_exec_group = apple_toolchain_utils.get_mac_exec_group(ctx),
+        xplat_exec_group = apple_toolchain_utils.get_xplat_exec_group(ctx),
         actions = actions,
         apple_mac_toolchain_info = apple_mac_toolchain_info,
         bundle_extension = bundle_extension,
@@ -1203,6 +1213,7 @@ def _apple_framework_packaging_impl(ctx):
 
 apple_framework_packaging = rule(
     implementation = _apple_framework_packaging_impl,
+    exec_groups = apple_toolchain_utils.use_apple_exec_group_toolchain(),
     toolchains = use_cpp_toolchain(),
     cfg = transition_support.apple_rule_transition,
     fragments = ["apple", "cpp", "objc"],
@@ -1349,16 +1360,6 @@ the framework as a dependency.""",
         "_allowlist_function_transition": attr.label(
             default = "@bazel_tools//tools/allowlists/function_transition_allowlist",
             doc = "Needed to allow this rule to have an incoming edge configuration transition.",
-        ),
-        "_mac_toolchain": attr.label(
-            default = Label("@build_bazel_rules_apple//apple/internal:mac_tools_toolchain"),
-            providers = [[AppleMacToolsToolchainInfo]],
-            cfg = "exec",
-        ),
-        "_xplat_toolchain": attr.label(
-            default = Label("@build_bazel_rules_apple//apple/internal:xplat_tools_toolchain"),
-            providers = [[AppleXPlatToolsToolchainInfo]],
-            cfg = "exec",
         ),
         "platform_type": attr.string(
             mandatory = False,
